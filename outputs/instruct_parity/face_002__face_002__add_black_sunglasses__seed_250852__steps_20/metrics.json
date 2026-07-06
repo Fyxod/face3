@@ -1,0 +1,16 @@
+{
+  "edit_steps": 20,
+  "face_id": "face_002",
+  "guidance_scale": 7.5,
+  "image_guidance_scale": 1.5,
+  "prompt": "add black sunglasses",
+  "seed": 250852,
+  "stock_vs_differentiable": {
+    "l2": 0.3942591229122861,
+    "max_abs": 0.9882352948188782,
+    "mean_abs": 0.3095399737358093,
+    "mse": 0.15544025599956512,
+    "psnr": 8.084364971541119,
+    "ssim": 0.3068196177482605
+  }
+}
