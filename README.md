@@ -32,6 +32,8 @@ InstructPix2Pix weights and ArcFace weights are frozen. Only perturbation parame
 
 This is much heavier than FACE/FACE2 because every optimization iteration unrolls an image edit. Start with smoke tests and low `--edit-steps` first.
 
+`--edit-steps 2` is only an autograd/timing smoke; it is not expected to produce a good-looking edit. Higher values such as `8`, `12`, or `20` are closer to normal InstructPix2Pix behavior but require substantially more VRAM because autograd stores denoising-loop activations. FACE3 enables editor gradient checkpointing by default to reduce this cost.
+
 ## Perturbation modules
 
 FACE3 uses the same perturbation module family as FACE2:

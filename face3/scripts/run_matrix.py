@@ -19,7 +19,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-guidance-scale", type=float, default=1.5)
     parser.add_argument("--editor-dtype", default="float16", choices=["float16", "fp16", "bfloat16", "bf16", "float32", "fp32"])
     parser.add_argument("--editor-model-id", default="timbrooks/instruct-pix2pix")
-    parser.add_argument("--enable-editor-gradient-checkpointing", action="store_true")
+    parser.add_argument("--enable-editor-gradient-checkpointing", dest="enable_editor_gradient_checkpointing", action="store_true", default=None)
+    parser.add_argument("--disable-editor-gradient-checkpointing", dest="enable_editor_gradient_checkpointing", action="store_false")
     parser.add_argument("--init", choices=["neutral", "small_random"], default=None)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-deepface", action="store_true")
@@ -46,7 +47,7 @@ def main() -> None:
         edit_steps=args.edit_steps,
         guidance_scale=args.guidance_scale,
         image_guidance_scale=args.image_guidance_scale,
-        enable_editor_gradient_checkpointing=args.enable_editor_gradient_checkpointing,
+        enable_editor_gradient_checkpointing=True if args.enable_editor_gradient_checkpointing is None else args.enable_editor_gradient_checkpointing,
     )
     summary = run_matrix(cfg)
     print(f"[face3-run] wrote: {summary['output_root']}")

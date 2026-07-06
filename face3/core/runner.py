@@ -40,7 +40,7 @@ class RunConfig:
     guidance_scale: float = 7.5
     image_guidance_scale: float = 1.5
     edit_eta: float = 0.0
-    enable_editor_gradient_checkpointing: bool = False
+    enable_editor_gradient_checkpointing: bool = True
 
 
 REQUIRED_HISTORY_FIELDS = {
@@ -595,6 +595,19 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
 
 
 def _time_estimates(summaries: list[dict[str, Any]], wall_seconds: float, observed_iters: int) -> dict[str, Any]:
+    if not summaries:
+        return {
+            "estimates_valid": False,
+            "invalid_reason": "no completed runs; timing estimates are unavailable",
+            "observed_completed_runs": 0,
+            "observed_mean_seconds_per_iteration_per_run": None,
+            "estimated_full_matrix_seconds_per_iteration": None,
+            "estimated_fixed_overhead_seconds": None,
+            "estimated_runtime_seconds_for_50_iterations": None,
+            "estimated_runtime_seconds_for_100_iterations": None,
+            "estimated_runtime_seconds_for_150_iterations": None,
+            "estimated_runtime_seconds_for_400_iterations": None,
+        }
     mean_seconds = [float(row.get("mean_seconds_iter", 0.0)) for row in summaries]
     observed_iter_seconds = sum(mean_seconds)
     fixed_overhead = max(0.0, float(wall_seconds) - float(observed_iters) * observed_iter_seconds)
@@ -603,6 +616,7 @@ def _time_estimates(summaries: list[dict[str, Any]], wall_seconds: float, observ
     full_iter_seconds = observed_iter_seconds * scale_to_full
     full_overhead = fixed_overhead * scale_to_full
     return {
+        "estimates_valid": True,
         "observed_completed_runs": len(summaries),
         "observed_mean_seconds_per_iteration_per_run": float(sum(mean_seconds) / max(len(mean_seconds), 1)),
         "estimated_full_matrix_seconds_per_iteration": full_iter_seconds,
@@ -653,13 +667,16 @@ def _write_top_summary(run_root: Path, cfg: RunConfig, started: float, summaries
         f"- runs completed: {payload['num_runs_completed']}",
         f"- failures: {payload['num_failures']}",
         f"- wall seconds: {wall:.2f}",
-        f"- observed mean seconds/iteration/run: {estimates['observed_mean_seconds_per_iteration_per_run']:.3f}",
-        f"- estimated 150-iteration full matrix: {estimates['estimated_runtime_seconds_for_150_iterations'] / 60:.1f} min",
         f"- peak VRAM GB: {payload.get('peak_vram_gb')}",
         f"- all required per-iteration fields populated: {payload['all_per_iteration_logging_fields_populated']}",
         f"- clamp/project logic active: {payload['clamp_project_logic_active']}",
         "",
     ]
+    if estimates.get("estimates_valid"):
+        lines.insert(-4, f"- observed mean seconds/iteration/run: {estimates['observed_mean_seconds_per_iteration_per_run']:.3f}")
+        lines.insert(-4, f"- estimated 150-iteration full matrix: {estimates['estimated_runtime_seconds_for_150_iterations'] / 60:.1f} min")
+    else:
+        lines.insert(-4, f"- timing estimates: unavailable ({estimates.get('invalid_reason')})")
     if failures:
         lines.extend(["## Failures", ""])
         for failure in failures:
@@ -691,4 +708,13 @@ def run_matrix(cfg: RunConfig) -> dict[str, Any]:
         except Exception as error:
             failures.append({"spec": spec.slug, "error": repr(error), "run_dir": str(run_dir)})
             write_json(run_dir / "FAILED.json", {"status": "failed", "error": repr(error)})
+            try:
+                import gc
+                import torch
+
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
     return _write_top_summary(root, cfg, started, summaries, failures)

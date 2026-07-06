@@ -23,7 +23,7 @@ class DifferentiableInstructSettings:
     guidance_scale: float = 7.5
     image_guidance_scale: float = 1.5
     eta: float = 0.0
-    enable_gradient_checkpointing: bool = False
+    enable_gradient_checkpointing: bool = True
     enable_vae_slicing: bool = True
 
 
@@ -129,6 +129,20 @@ class DifferentiableInstructPix2Pix:
 
     def _encode_image_latents(self, image: torch.Tensor) -> torch.Tensor:
         image = self._preprocess_image(image)
+        if self.settings.enable_gradient_checkpointing and torch.is_grad_enabled() and image.requires_grad:
+            from torch.utils.checkpoint import checkpoint
+
+            def encode_mode(value: torch.Tensor) -> torch.Tensor:
+                latent_dist_inner = self.vae.encode(value).latent_dist
+                if hasattr(latent_dist_inner, "mode"):
+                    return latent_dist_inner.mode()
+                return latent_dist_inner.mean
+
+            latents = checkpoint(encode_mode, image, use_reentrant=False)
+            latents = latents * self.vae.config.scaling_factor
+            zeros = torch.zeros_like(latents)
+            return torch.cat([latents, latents, zeros], dim=0)
+
         latent_dist = self.vae.encode(image).latent_dist
         if hasattr(latent_dist, "mode"):
             latents = latent_dist.mode()
@@ -174,12 +188,25 @@ class DifferentiableInstructPix2Pix:
             latent_model_input = torch.cat([latents] * 3, dim=0)
             latent_model_input = self.scheduler.scale_model_input(latent_model_input, timestep)
             model_input = torch.cat([latent_model_input, image_latents], dim=1)
-            noise_pred = self.unet(
-                model_input,
-                timestep,
-                encoder_hidden_states=prompt_embeds,
-                return_dict=False,
-            )[0]
+            if self.settings.enable_gradient_checkpointing and torch.is_grad_enabled() and model_input.requires_grad:
+                from torch.utils.checkpoint import checkpoint
+
+                def unet_forward(value: torch.Tensor) -> torch.Tensor:
+                    return self.unet(
+                        value,
+                        timestep,
+                        encoder_hidden_states=prompt_embeds,
+                        return_dict=False,
+                    )[0]
+
+                noise_pred = checkpoint(unet_forward, model_input, use_reentrant=False)
+            else:
+                noise_pred = self.unet(
+                    model_input,
+                    timestep,
+                    encoder_hidden_states=prompt_embeds,
+                    return_dict=False,
+                )[0]
             noise_pred_text, noise_pred_image, noise_pred_uncond = noise_pred.chunk(3)
             noise_pred = (
                 noise_pred_uncond
@@ -187,5 +214,14 @@ class DifferentiableInstructPix2Pix:
                 + float(self.settings.image_guidance_scale) * (noise_pred_image - noise_pred_uncond)
             )
             latents = self.scheduler.step(noise_pred, timestep, latents, return_dict=False, **extra_step_kwargs)[0]
-        decoded = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False)[0]
+        decode_input = latents / self.vae.config.scaling_factor
+        if self.settings.enable_gradient_checkpointing and torch.is_grad_enabled() and decode_input.requires_grad:
+            from torch.utils.checkpoint import checkpoint
+
+            def decode_forward(value: torch.Tensor) -> torch.Tensor:
+                return self.vae.decode(value, return_dict=False)[0]
+
+            decoded = checkpoint(decode_forward, decode_input, use_reentrant=False)
+        else:
+            decoded = self.vae.decode(decode_input, return_dict=False)[0]
         return (decoded / 2.0 + 0.5).clamp(0, 1).float()
