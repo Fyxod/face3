@@ -88,35 +88,52 @@ class DifferentiableInstructPix2Pix:
         }
 
     @torch.no_grad()
-    def prompt_embeds(self, prompt: str, negative_prompt: str = "") -> torch.Tensor:
+    def prompt_embeds(self, prompt: str, negative_prompt: str | None = None) -> torch.Tensor:
         key = (prompt, negative_prompt)
         cached = self._prompt_cache.get(key)
         if cached is not None:
             return cached
-        max_length = self.tokenizer.model_max_length
-        text_inputs = self.tokenizer(
-            [prompt],
-            padding="max_length",
-            max_length=max_length,
-            truncation=True,
-            return_tensors="pt",
-        )
-        negative_inputs = self.tokenizer(
-            [negative_prompt],
-            padding="max_length",
-            max_length=max_length,
-            truncation=True,
-            return_tensors="pt",
-        )
-        prompt_embeds = self.text_encoder(text_inputs.input_ids.to(self.device))[0]
-        negative_embeds = self.text_encoder(negative_inputs.input_ids.to(self.device))[0]
-        prompt_embeds = prompt_embeds.to(device=self.device, dtype=self.dtype)
-        negative_embeds = negative_embeds.to(device=self.device, dtype=self.dtype)
-        # Diffusers InstructPix2Pix orders classifier-free branches as
-        # [text, image-conditional negative, unconditional negative].
-        embeds = torch.cat([prompt_embeds, negative_embeds, negative_embeds], dim=0).detach()
+        if hasattr(self.pipe, "_encode_prompt"):
+            # Use the same helper as StableDiffusionInstructPix2PixPipeline.__call__.
+            # This keeps textual-inversion handling, attention-mask behavior, dtype,
+            # repetition, and pix2pix's [prompt, negative, negative] branch order
+            # exactly aligned with stock diffusers.
+            embeds = self.pipe._encode_prompt(
+                prompt,
+                self.device,
+                1,
+                self.do_classifier_free_guidance,
+                negative_prompt,
+                prompt_embeds=None,
+                negative_prompt_embeds=None,
+            ).detach()
+        else:
+            max_length = self.tokenizer.model_max_length
+            text_inputs = self.tokenizer(
+                [prompt],
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
+            )
+            negative_inputs = self.tokenizer(
+                [negative_prompt or ""],
+                padding="max_length",
+                max_length=max_length,
+                truncation=True,
+                return_tensors="pt",
+            )
+            prompt_embeds = self.text_encoder(text_inputs.input_ids.to(self.device))[0]
+            negative_embeds = self.text_encoder(negative_inputs.input_ids.to(self.device))[0]
+            prompt_embeds = prompt_embeds.to(device=self.device, dtype=self.dtype)
+            negative_embeds = negative_embeds.to(device=self.device, dtype=self.dtype)
+            embeds = torch.cat([prompt_embeds, negative_embeds, negative_embeds], dim=0).detach()
         self._prompt_cache[key] = embeds
         return embeds
+
+    @property
+    def do_classifier_free_guidance(self) -> bool:
+        return float(self.settings.guidance_scale) > 1.0 and float(self.settings.image_guidance_scale) >= 1.0
 
     def _preprocess_image(self, image: torch.Tensor) -> torch.Tensor:
         image = image.clamp(0, 1)
@@ -143,6 +160,16 @@ class DifferentiableInstructPix2Pix:
             zeros = torch.zeros_like(latents)
             return torch.cat([latents, latents, zeros], dim=0)
 
+        if hasattr(self.pipe, "prepare_image_latents"):
+            return self.pipe.prepare_image_latents(
+                image,
+                batch_size=1,
+                num_images_per_prompt=1,
+                dtype=self.dtype,
+                device=self.device,
+                do_classifier_free_guidance=self.do_classifier_free_guidance,
+            )
+
         latent_dist = self.vae.encode(image).latent_dist
         if hasattr(latent_dist, "mode"):
             latents = latent_dist.mode()
@@ -157,11 +184,24 @@ class DifferentiableInstructPix2Pix:
         height = height - height % self.vae_scale_factor
         width = width - width % self.vae_scale_factor
         channels = int(self.vae.config.latent_channels)
+        if hasattr(self.pipe, "prepare_latents"):
+            return self.pipe.prepare_latents(
+                batch_size=1,
+                num_channels_latents=channels,
+                height=height,
+                width=width,
+                dtype=self.dtype,
+                device=self.device,
+                generator=generator,
+                latents=None,
+            )
         shape = (1, channels, height // self.vae_scale_factor, width // self.vae_scale_factor)
         latents = torch.randn(shape, generator=generator, device=self.device, dtype=self.dtype)
         return latents * self.scheduler.init_noise_sigma
 
     def _extra_step_kwargs(self, generator: torch.Generator) -> dict[str, Any]:
+        if hasattr(self.pipe, "prepare_extra_step_kwargs"):
+            return self.pipe.prepare_extra_step_kwargs(generator, self.settings.eta)
         kwargs: dict[str, Any] = {}
         try:
             import inspect
@@ -178,6 +218,8 @@ class DifferentiableInstructPix2Pix:
 
     def edit_tensor(self, image: torch.Tensor, prompt: str, seed: int) -> torch.Tensor:
         """Return edited RGB tensor in [0, 1], preserving autograd to ``image``."""
+        self.pipe._guidance_scale = float(self.settings.guidance_scale)
+        self.pipe._image_guidance_scale = float(self.settings.image_guidance_scale)
         prompt_embeds = self.prompt_embeds(prompt)
         self.scheduler.set_timesteps(self.settings.num_inference_steps, device=self.device)
         image_latents = self._encode_image_latents(image)
