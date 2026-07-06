@@ -138,6 +138,37 @@ $HOME/.local/bin/micromamba run \
 
 ## 5. Optional longer run after smoke
 
+## 5a. Verify saved perturbed edits with the stock pipeline
+
+If a comparison sheet shows a surprisingly strong perturbed-edit failure, run
+this before trusting it. This does not optimize anything. It takes the saved
+`perturbed_best.png` and `perturbed_final.png` images and sends them through
+the normal diffusers InstructPix2Pix pipeline with the same prompt/seed/settings.
+
+```bash
+cd /home/interns/Desktop/face3
+
+$HOME/.local/bin/micromamba run \
+  -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000 \
+  python -m face3.scripts.verify_saved_perturbed_edits \
+  --run-root outputs/smoke_timing/20260706_181028_edited_output_identity_all_sequential
+```
+
+For any future run, replace `--run-root` with that run folder. If `--run-root`
+is omitted, the verifier uses the latest folder under `outputs/smoke_timing`.
+
+Inspect:
+
+```text
+<run-root>/stock_replay_verification/stock_replay_verification.md
+<run-root>/stock_replay_verification/stock_replay_verification.csv
+<case-run>/stock_replay_verification/stock_replay_sheet.png
+```
+
+If `stock_vs_saved_best_wrapper_ssim` is high, the saved differentiable edit is
+reproduced by the normal stock pipeline for that saved perturbed image. If it is
+low, the failure is a wrapper/path artifact and should not be trusted.
+
 Do not run this until smoke timing gives a sane ETA.
 
 Start with a short run before attempting anything large. Use `--edit-steps 8` or `--edit-steps 12` first if `--edit-steps 20` is close to OOM.

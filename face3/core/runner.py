@@ -388,6 +388,22 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
         row0["editor_num_inference_steps"] = cfg.edit_steps
         row0["total_geometry_grad_norm"] = 0.0
         _save_checkpoint(output_dir, 0, p0, aux0, row0, geometry)
+        rows.append(row0)
+        append_jsonl(output_dir / "history.jsonl", row0)
+        best = {
+            "row": row0,
+            "theta_state": geometry.theta_state(),
+            "perturbed": p0.detach().clone(),
+            "perturbed_edit": edit0.detach().clone(),
+            "aux": {
+                "spatial": aux0["spatial"].detach().clone(),
+                "dct_image": aux0["dct_image"].detach().clone(),
+                "dct_delta": aux0["dct_delta"].detach().clone(),
+                "displacement": aux0["displacement"].detach().clone(),
+                "fields": {k: v.detach().clone() for k, v in aux0["fields"].items()},
+                "fft_delta": aux0["fft_delta"].detach().clone(),
+            },
+        }
 
     for iteration in range(1, cfg.iters + 1):
         iter_started = time.monotonic()
@@ -438,7 +454,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
         row["total_geometry_grad_norm"] = row.get("total_grad_norm", 0.0)
         rows.append(row)
         append_jsonl(output_dir / "history.jsonl", row)
-        if best is None or row["Z"] < best["row"]["Z"]:
+        if row["Z"] < best["row"]["Z"]:
             best = {
                 "row": row,
                 "theta_state": geometry.theta_state(),
@@ -525,6 +541,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
     write_csv(output_dir / "history.csv", rows)
     elapsed = time.monotonic() - started
     final_row = rows[-1]
+    optimization_rows = [row for row in rows if int(row.get("iter", 0)) > 0]
     summary = {
         "status": "done",
         "experiment": "edited_output_identity",
@@ -553,7 +570,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
         "final_edit_identity_similarity_score_pct": float(_float_terms(final_terms)["identity_similarity_score_pct"]),
         "best_edit_identity_cosine_similarity_raw": best["row"].get("edit_identity_cosine_similarity_raw"),
         "best_edit_identity_similarity_score_pct": best["row"].get("edit_identity_similarity_score_pct"),
-        "mean_seconds_iter": float(sum(row["seconds_iter"] for row in rows) / max(len(rows), 1)),
+        "mean_seconds_iter": float(sum(row["seconds_iter"] for row in optimization_rows) / max(len(optimization_rows), 1)),
         "elapsed_seconds": elapsed,
         "final_psnr_to_original": final_row["psnr_to_original"],
         "final_ssim_to_original": final_row["ssim_to_original"],
