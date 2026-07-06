@@ -97,10 +97,10 @@ $HOME/.local/bin/micromamba run \
   python -m face3.scripts.smoke_timing \
   --mat-root /home/interns/Desktop/mat \
   --arcface-checkpoint /home/interns/Desktop/face3/models/arcface/iresnet100.pth \
-  --iters 1 \
-  --edit-steps 2 \
+  --iters 4 \
+  --edit-steps 20 \
   --all-cases \
-  --geometry-config configs/geometry_default.json
+  --geometry-config configs/geometry_default.json --init small_random
 ```
 
 ## 5. Optional longer run after smoke
@@ -119,7 +119,7 @@ $HOME/.local/bin/micromamba run \
   --mat-root /home/interns/Desktop/mat \
   --arcface-checkpoint /home/interns/Desktop/face3/models/arcface/iresnet100.pth \
   --iters 10 \
-  --edit-steps 2 \
+  --edit-steps 20 \
   --output-root outputs/edited_output_identity_dct_image \
   --geometry-config configs/geometry_default.json \
   --skip-deepface \

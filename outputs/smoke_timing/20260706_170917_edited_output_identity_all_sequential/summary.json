@@ -1,0 +1,52 @@
+{
+  "all_cases": true,
+  "all_per_iteration_logging_fields_populated": true,
+  "clamp_project_logic_active": true,
+  "editor_num_inference_steps": 20,
+  "execution": "sequential",
+  "experiment": "edited_output_identity",
+  "failures": [
+    {
+      "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 20.00 MiB. GPU 0 has a total capacity of 47.53 GiB of which 7.44 MiB is free. Process 3638029 has 8.03 MiB memory in use. Process 3638034 has 7.91 MiB memory in use. Process 3638025 has 7.91 MiB memory in use. Process 3638039 has 8.03 MiB memory in use. Including non-PyTorch memory, this process has 47.43 GiB memory in use. Of the allocated memory 45.97 GiB is allocated by PyTorch, and 1.11 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')",
+      "run_dir": "outputs/smoke_timing/20260706_170917_edited_output_identity_all_sequential/runs/edited_output_identity/instructpix2pix_arcface_iresnet100/face_002__add_black_sunglasses",
+      "spec": "edited_output_identity__face_002__add_black_sunglasses"
+    },
+    {
+      "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 20.00 MiB. GPU 0 has a total capacity of 47.53 GiB of which 5.44 MiB is free. Process 3638029 has 8.03 MiB memory in use. Process 3638034 has 7.91 MiB memory in use. Process 3638025 has 7.91 MiB memory in use. Process 3638039 has 8.03 MiB memory in use. Including non-PyTorch memory, this process has 47.44 GiB memory in use. Of the allocated memory 45.99 GiB is allocated by PyTorch, and 1.10 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')",
+      "run_dir": "outputs/smoke_timing/20260706_170917_edited_output_identity_all_sequential/runs/edited_output_identity/instructpix2pix_arcface_iresnet100/face_002__add_headphones",
+      "spec": "edited_output_identity__face_002__add_headphones"
+    },
+    {
+      "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 20.00 MiB. GPU 0 has a total capacity of 47.53 GiB of which 5.44 MiB is free. Process 3638029 has 8.03 MiB memory in use. Process 3638034 has 7.91 MiB memory in use. Process 3638025 has 7.91 MiB memory in use. Process 3638039 has 8.03 MiB memory in use. Including non-PyTorch memory, this process has 47.44 GiB memory in use. Of the allocated memory 45.99 GiB is allocated by PyTorch, and 1.10 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')",
+      "run_dir": "outputs/smoke_timing/20260706_170917_edited_output_identity_all_sequential/runs/edited_output_identity/instructpix2pix_arcface_iresnet100/face_005__add_black_sunglasses",
+      "spec": "edited_output_identity__face_005__add_black_sunglasses"
+    },
+    {
+      "error": "OutOfMemoryError('CUDA out of memory. Tried to allocate 20.00 MiB. GPU 0 has a total capacity of 47.53 GiB of which 5.44 MiB is free. Process 3638029 has 8.03 MiB memory in use. Process 3638034 has 7.91 MiB memory in use. Process 3638025 has 7.91 MiB memory in use. Process 3638039 has 8.03 MiB memory in use. Including non-PyTorch memory, this process has 47.44 GiB memory in use. Of the allocated memory 45.99 GiB is allocated by PyTorch, and 1.10 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)')",
+      "run_dir": "outputs/smoke_timing/20260706_170917_edited_output_identity_all_sequential/runs/edited_output_identity/instructpix2pix_arcface_iresnet100/face_005__add_headphones",
+      "spec": "edited_output_identity__face_005__add_headphones"
+    }
+  ],
+  "iters": 2,
+  "mode": "smoke_timing",
+  "num_failures": 4,
+  "num_runs_attempted": 4,
+  "num_runs_completed": 0,
+  "nvidia_smi_memory_gb": 47.5224609375,
+  "output_root": "outputs/smoke_timing/20260706_170917_edited_output_identity_all_sequential",
+  "peak_vram_gb": 45.98936414718628,
+  "quick": false,
+  "status": "failed",
+  "summaries": [],
+  "time_estimates": {
+    "estimated_fixed_overhead_seconds": 138.19092661887407,
+    "estimated_full_matrix_seconds_per_iteration": 0.0,
+    "estimated_runtime_seconds_for_100_iterations": 138.19092661887407,
+    "estimated_runtime_seconds_for_150_iterations": 138.19092661887407,
+    "estimated_runtime_seconds_for_400_iterations": 138.19092661887407,
+    "estimated_runtime_seconds_for_50_iterations": 138.19092661887407,
+    "observed_completed_runs": 0,
+    "observed_mean_seconds_per_iteration_per_run": 0.0
+  },
+  "wall_seconds": 34.54773165471852
+}
