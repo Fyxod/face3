@@ -152,17 +152,16 @@ class DifferentiableInstructPix2Pix:
         zeros = torch.zeros_like(latents)
         return torch.cat([latents, latents, zeros], dim=0)
 
-    def _initial_latents(self, image: torch.Tensor, seed: int) -> torch.Tensor:
+    def _initial_latents(self, image: torch.Tensor, generator: torch.Generator) -> torch.Tensor:
         height, width = image.shape[-2:]
         height = height - height % self.vae_scale_factor
         width = width - width % self.vae_scale_factor
         channels = int(self.vae.config.latent_channels)
         shape = (1, channels, height // self.vae_scale_factor, width // self.vae_scale_factor)
-        generator = torch.Generator(device=self.device).manual_seed(int(seed))
         latents = torch.randn(shape, generator=generator, device=self.device, dtype=self.dtype)
         return latents * self.scheduler.init_noise_sigma
 
-    def _extra_step_kwargs(self, seed: int) -> dict[str, Any]:
+    def _extra_step_kwargs(self, generator: torch.Generator) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
         try:
             import inspect
@@ -171,7 +170,7 @@ class DifferentiableInstructPix2Pix:
             if "eta" in parameters:
                 kwargs["eta"] = self.settings.eta
             if "generator" in parameters:
-                kwargs["generator"] = torch.Generator(device=self.device).manual_seed(int(seed))
+                kwargs["generator"] = generator
         except Exception:
             if self.settings.eta:
                 kwargs["eta"] = self.settings.eta
@@ -182,8 +181,9 @@ class DifferentiableInstructPix2Pix:
         prompt_embeds = self.prompt_embeds(prompt)
         self.scheduler.set_timesteps(self.settings.num_inference_steps, device=self.device)
         image_latents = self._encode_image_latents(image)
-        latents = self._initial_latents(image, seed)
-        extra_step_kwargs = self._extra_step_kwargs(seed)
+        generator = torch.Generator(device=self.device).manual_seed(int(seed))
+        latents = self._initial_latents(image, generator)
+        extra_step_kwargs = self._extra_step_kwargs(generator)
         for timestep in self.scheduler.timesteps:
             latent_model_input = torch.cat([latents] * 3, dim=0)
             latent_model_input = self.scheduler.scale_model_input(latent_model_input, timestep)

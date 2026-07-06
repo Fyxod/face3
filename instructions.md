@@ -44,6 +44,30 @@ Do not commit this file.
 
 ## 2. Differentiable edited-output smoke
 
+Before optimization timing, run the stock-vs-differentiable parity check. It compares the normal diffusers `pipe(...)` edit against FACE3's differentiable wrapper using the same image, prompt, seed, and settings.
+
+```bash
+cd /home/interns/Desktop/face3
+
+$HOME/.local/bin/micromamba run \
+  -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000 \
+  python -m face3.scripts.check_instruct_parity \
+  --mat-root /home/interns/Desktop/mat \
+  --face-id face_002 \
+  --prompt "add black sunglasses" \
+  --seed 250852 \
+  --edit-steps 20 \
+  --output-root outputs/instruct_parity
+```
+
+Inspect:
+
+```text
+outputs/instruct_parity/.../parity_sheet.png
+```
+
+If the stock edit is good but the differentiable wrapper edit is not, stop and push `outputs/instruct_parity`.
+
 Use only 1 optimization iteration and 2 InstructPix2Pix edit steps first:
 
 ```bash
