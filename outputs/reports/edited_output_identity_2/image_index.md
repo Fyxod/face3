@@ -1,0 +1,1 @@
+- face_002 / add black sunglasses: strips/face_face_002_add_black_sunglasses.png
