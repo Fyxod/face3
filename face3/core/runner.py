@@ -318,6 +318,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
     with torch.no_grad():
         clean_edit_tensor = editor.edit_tensor(original_tensor, spec.case.prompt, spec.run_seed).detach()
     clean_edit = tensor_to_pil(clean_edit_tensor)
+    clean_edit.save(output_dir / "original_edited_gradient_reference.png")
     clean_edit.save(output_dir / "original_edited.png")
     reference = prepare_identity_reference(arcface, clean_edit_tensor)
     reference.embedding_original.detach().cpu().numpy().astype("float32").tofile(output_dir / "embedding_clean_edit.raw")
@@ -477,15 +478,37 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
 
     with torch.no_grad():
         final_perturbed_tensor, final_aux = geometry(original_tensor)
-        final_edit_tensor = editor.edit_tensor(final_perturbed_tensor, spec.case.prompt, spec.run_seed).detach()
-        final_Z, final_terms = identity_objective(arcface, final_edit_tensor, reference)
+        final_edit_tensor_gradient_path = editor.edit_tensor(final_perturbed_tensor, spec.case.prompt, spec.run_seed).detach()
+        final_Z_gradient_path, final_terms_gradient_path = identity_objective(arcface, final_edit_tensor_gradient_path, reference)
 
     final_perturbed = tensor_to_pil(final_perturbed_tensor)
     best_perturbed = tensor_to_pil(best["perturbed"])
     final_perturbed.save(output_dir / "perturbed_final.png")
     best_perturbed.save(output_dir / "perturbed_best.png")
-    tensor_to_pil(best["perturbed_edit"]).save(output_dir / "perturbed_best_edited.png")
-    tensor_to_pil(final_edit_tensor).save(output_dir / "perturbed_final_edited.png")
+    tensor_to_pil(best["perturbed_edit"]).save(output_dir / "perturbed_best_edited_gradient_path.png")
+    tensor_to_pil(final_edit_tensor_gradient_path).save(output_dir / "perturbed_final_edited_gradient_path.png")
+
+    # Public edited images must come from the normal stock/no-grad diffusers
+    # pipeline. The differentiable edit path above is only the optimization
+    # path; for some perturbed inputs it can produce wrapper-only artifacts.
+    stock_clean_edit = editor.stock_edit_pil(original, spec.case.prompt, spec.run_seed)
+    stock_best_edit = editor.stock_edit_pil(best_perturbed, spec.case.prompt, spec.run_seed)
+    stock_final_edit = editor.stock_edit_pil(final_perturbed, spec.case.prompt, spec.run_seed)
+    stock_clean_edit.save(output_dir / "original_edited.png")
+    stock_best_edit.save(output_dir / "perturbed_best_edited.png")
+    stock_final_edit.save(output_dir / "perturbed_final_edited.png")
+
+    with torch.no_grad():
+        stock_clean_tensor = pil_to_tensor(stock_clean_edit, device)
+        stock_best_tensor = pil_to_tensor(stock_best_edit, device)
+        stock_final_tensor = pil_to_tensor(stock_final_edit, device)
+        stock_reference = prepare_identity_reference(arcface, stock_clean_tensor)
+        best_Z_stock_public, best_terms_stock_public = identity_objective(arcface, stock_best_tensor, stock_reference)
+        final_Z_stock_public, final_terms_stock_public = identity_objective(arcface, stock_final_tensor, stock_reference)
+        clean_stock_vs_gradient_reference = image_metrics(stock_clean_edit, clean_edit)
+        best_gradient_vs_stock = image_metrics(stock_best_edit, Image.open(output_dir / "perturbed_best_edited_gradient_path.png"))
+        final_gradient_vs_stock = image_metrics(stock_final_edit, Image.open(output_dir / "perturbed_final_edited_gradient_path.png"))
+
     _component_flow_images(final_aux, output_dir, geometry.component_limit_for_flow, geometry)
     flow_to_pil(best["aux"]["displacement"], geometry.component_limit_for_flow).save(output_dir / "combined_flow_best.png")
     (output_dir / "combined_flow.png").replace(output_dir / "combined_flow_final.png")
@@ -499,16 +522,24 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
     # for report/debug metadata.
     write_json(output_dir / "geometry_params_final.json", {"limits": geometry.limits_dict(), "parameter_diagnostics": geometry.parameter_diagnostics(), "last_projection": projection})
     write_json(output_dir / "geometry_params_best.json", {"best_iter_by_Z": best["row"]["iter"], "best_Z": best["row"]["Z"]})
-    np.save(output_dir / "embedding_perturbed_edit_final.npy", arcface.embedding(final_edit_tensor).detach().cpu().numpy().astype("float32"))
-    np.save(output_dir / "embedding_perturbed_edit_best.npy", arcface.embedding(best["perturbed_edit"]).detach().cpu().numpy().astype("float32"))
+    np.save(output_dir / "embedding_perturbed_edit_final_gradient_path.npy", arcface.embedding(final_edit_tensor_gradient_path).detach().cpu().numpy().astype("float32"))
+    np.save(output_dir / "embedding_perturbed_edit_best_gradient_path.npy", arcface.embedding(best["perturbed_edit"]).detach().cpu().numpy().astype("float32"))
+    np.save(output_dir / "embedding_perturbed_edit_final.npy", arcface.embedding(stock_final_tensor).detach().cpu().numpy().astype("float32"))
+    np.save(output_dir / "embedding_perturbed_edit_best.npy", arcface.embedding(stock_best_tensor).detach().cpu().numpy().astype("float32"))
 
     edit_metadata: dict[str, Any] = {
         **editor.metadata(),
         "separate_downstream_eval_used": False,
         "edit_outputs_used_in_loss": True,
+        "public_edit_images_regenerated_with_stock_pipeline": True,
+        "public_edit_images_source": "StableDiffusionInstructPix2PixPipeline.__call__ under torch.inference_mode",
         "clean_edit_path": "original_edited.png",
+        "clean_edit_gradient_reference_path": "original_edited_gradient_reference.png",
         "perturbed_best_edit_path": "perturbed_best_edited.png",
         "perturbed_final_edit_path": "perturbed_final_edited.png",
+        "perturbed_best_edit_gradient_path": "perturbed_best_edited_gradient_path.png",
+        "perturbed_final_edit_gradient_path": "perturbed_final_edited_gradient_path.png",
+        "best_selection_source": "minimum differentiable gradient-path Z; public image is stock replay of that selected input",
     }
 
     input_metrics_best = image_metrics(original, best_perturbed)
@@ -558,18 +589,30 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
         "editor_num_inference_steps": cfg.edit_steps,
         "editor_guidance_scale": cfg.guidance_scale,
         "editor_image_guidance_scale": cfg.image_guidance_scale,
-        "final_Z": float(final_Z.detach().float().cpu()),
-        "final_loss": float(final_Z.detach().float().cpu()),
+        "final_Z": float(final_Z_stock_public.detach().float().cpu()),
+        "final_loss": float(final_Z_stock_public.detach().float().cpu()),
         "best_iter_by_Z": best["row"]["iter"],
-        "best_Z": best["row"]["Z"],
-        "final_identity_cosine_similarity_raw": float(_float_terms(final_terms)["identity_cosine_similarity_raw"]),
-        "final_identity_similarity_score_pct": float(_float_terms(final_terms)["identity_similarity_score_pct"]),
-        "best_identity_cosine_similarity_raw": best["row"].get("identity_cosine_similarity_raw"),
-        "best_identity_similarity_score_pct": best["row"].get("identity_similarity_score_pct"),
-        "final_edit_identity_cosine_similarity_raw": float(_float_terms(final_terms)["identity_cosine_similarity_raw"]),
-        "final_edit_identity_similarity_score_pct": float(_float_terms(final_terms)["identity_similarity_score_pct"]),
-        "best_edit_identity_cosine_similarity_raw": best["row"].get("edit_identity_cosine_similarity_raw"),
-        "best_edit_identity_similarity_score_pct": best["row"].get("edit_identity_similarity_score_pct"),
+        "best_Z": float(best_Z_stock_public.detach().float().cpu()),
+        "final_Z_stock_public": float(final_Z_stock_public.detach().float().cpu()),
+        "best_Z_stock_public": float(best_Z_stock_public.detach().float().cpu()),
+        "final_Z_gradient_path": float(final_Z_gradient_path.detach().float().cpu()),
+        "best_Z_gradient_path": best["row"]["Z"],
+        "public_edit_images_regenerated_with_stock_pipeline": True,
+        "clean_stock_vs_gradient_reference_ssim": clean_stock_vs_gradient_reference["ssim"],
+        "best_gradient_path_vs_stock_public_ssim": best_gradient_vs_stock["ssim"],
+        "final_gradient_path_vs_stock_public_ssim": final_gradient_vs_stock["ssim"],
+        "final_stock_public_identity_cosine_similarity_raw": float(_float_terms(final_terms_stock_public)["identity_cosine_similarity_raw"]),
+        "final_stock_public_identity_similarity_score_pct": float(_float_terms(final_terms_stock_public)["identity_similarity_score_pct"]),
+        "best_stock_public_identity_cosine_similarity_raw": float(_float_terms(best_terms_stock_public)["identity_cosine_similarity_raw"]),
+        "best_stock_public_identity_similarity_score_pct": float(_float_terms(best_terms_stock_public)["identity_similarity_score_pct"]),
+        "final_identity_cosine_similarity_raw": float(_float_terms(final_terms_stock_public)["identity_cosine_similarity_raw"]),
+        "final_identity_similarity_score_pct": float(_float_terms(final_terms_stock_public)["identity_similarity_score_pct"]),
+        "best_identity_cosine_similarity_raw": float(_float_terms(best_terms_stock_public)["identity_cosine_similarity_raw"]),
+        "best_identity_similarity_score_pct": float(_float_terms(best_terms_stock_public)["identity_similarity_score_pct"]),
+        "final_edit_identity_cosine_similarity_raw": float(_float_terms(final_terms_stock_public)["identity_cosine_similarity_raw"]),
+        "final_edit_identity_similarity_score_pct": float(_float_terms(final_terms_stock_public)["identity_similarity_score_pct"]),
+        "best_edit_identity_cosine_similarity_raw": float(_float_terms(best_terms_stock_public)["identity_cosine_similarity_raw"]),
+        "best_edit_identity_similarity_score_pct": float(_float_terms(best_terms_stock_public)["identity_similarity_score_pct"]),
         "mean_seconds_iter": float(sum(row["seconds_iter"] for row in optimization_rows) / max(len(optimization_rows), 1)),
         "elapsed_seconds": elapsed,
         "final_psnr_to_original": final_row["psnr_to_original"],
@@ -587,6 +630,12 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
         "final_output_ssim": output_metrics_final["ssim"],
         "final_output_psnr": output_metrics_final["psnr"],
         "final_output_l2": output_metrics_final["l2"],
+        "best_stock_public_output_ssim": output_metrics_best["ssim"],
+        "best_stock_public_output_psnr": output_metrics_best["psnr"],
+        "best_stock_public_output_l2": output_metrics_best["l2"],
+        "final_stock_public_output_ssim": output_metrics_final["ssim"],
+        "final_stock_public_output_psnr": output_metrics_final["psnr"],
+        "final_stock_public_output_l2": output_metrics_final["l2"],
         "final_combined_max_disp_px": final_row["combined_max_disp_px"],
         "final_combined_mean_disp_px": final_row["combined_mean_disp_px"],
         "final_combined_p95_disp_px": final_row["combined_p95_disp_px"],

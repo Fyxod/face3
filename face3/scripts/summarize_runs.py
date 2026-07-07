@@ -306,6 +306,11 @@ def any_history_key(runs: list[dict[str, Any]], key: str) -> bool:
     return any(to_float(row.get(key)) is not None for run in runs for row in run["history_rows"])
 
 
+def summary_value(summary: dict[str, Any], preferred: str, fallback: str) -> Any:
+    value = summary.get(preferred)
+    return summary.get(fallback) if value is None or value == "" else value
+
+
 def plot_components(path: Path, runs: list[dict[str, Any]]) -> None:
     keys = ["tps_mean_disp", "delaunay_mean_disp", "rolling_mean_disp"]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -386,21 +391,27 @@ def build_tables(runs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list
             {
                 "face_id": run["face_id"],
                 "prompt": run["prompt"],
-                "final_Z": summary.get("final_Z"),
-                "best_Z": summary.get("best_Z"),
+                "final_Z": summary_value(summary, "final_Z_stock_public", "final_Z"),
+                "best_Z": summary_value(summary, "best_Z_stock_public", "best_Z"),
+                "best_Z_gradient_path": summary.get("best_Z_gradient_path"),
                 "best_iter_by_Z": summary.get("best_iter_by_Z"),
-                "final_identity_cosine_similarity_raw": summary.get("final_identity_cosine_similarity_raw"),
-                "final_identity_similarity_score_pct": summary.get("final_identity_similarity_score_pct"),
+                "final_identity_cosine_similarity_raw": summary_value(
+                    summary, "final_stock_public_identity_cosine_similarity_raw", "final_identity_cosine_similarity_raw"
+                ),
+                "final_identity_similarity_score_pct": summary_value(
+                    summary, "final_stock_public_identity_similarity_score_pct", "final_identity_similarity_score_pct"
+                ),
                 "ssim_to_original": summary.get("final_ssim_to_original"),
                 "psnr_to_original": summary.get("final_psnr_to_original"),
-                "output_ssim": summary.get("best_output_ssim"),
-                "output_l2": summary.get("best_output_l2"),
+                "output_ssim": summary_value(summary, "best_stock_public_output_ssim", "best_output_ssim"),
+                "output_l2": summary_value(summary, "best_stock_public_output_l2", "best_output_l2"),
                 "max_disp_px": summary.get("final_combined_max_disp_px"),
                 "dct_gain_mean_abs": summary.get("final_dct_gain_mean_abs"),
                 "dct_energy_change": summary.get("final_dct_relative_energy_change"),
                 "dct_spatial_delta_mse": summary.get("final_dct_spatial_delta_mse"),
                 "fraction_clamped": summary.get("final_fraction_clamped_total"),
                 "seconds_per_iter": summary.get("mean_seconds_iter"),
+                "public_edits_stock_regenerated": summary.get("public_edit_images_regenerated_with_stock_pipeline", False),
                 "run_dir": run["run_dir"],
             }
         )
@@ -428,6 +439,7 @@ def build_html(data: dict[str, Any]) -> str:
         ("dct_gain_mean_abs", "DCT gain mean abs"),
         ("dct_energy_change", "DCT energy change"),
         ("fraction_clamped", "fraction clamped"),
+        ("public_edits_stock_regenerated", "stock public edits"),
     ]
     css = """
     body { margin:0; font-family: Inter, "Segoe UI", Arial, sans-serif; color:#17202a; background:white; }
@@ -579,6 +591,7 @@ def make_pdf(data: dict[str, Any], output_root: Path, pdf_path: Path, compress_i
         ("max_disp_px", "max disp"),
         ("dct_gain_mean_abs", "DCT gain"),
         ("dct_energy_change", "DCT energy"),
+        ("public_edits_stock_regenerated", "stock public edits"),
     ]
 
     story.append(Paragraph(TITLE, styles["Title"]))

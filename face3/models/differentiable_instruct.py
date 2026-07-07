@@ -13,6 +13,7 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
+from PIL import Image
 
 
 @dataclass
@@ -267,3 +268,25 @@ class DifferentiableInstructPix2Pix:
         else:
             decoded = self.vae.decode(decode_input, return_dict=False)[0]
         return (decoded / 2.0 + 0.5).clamp(0, 1).float()
+
+    @torch.inference_mode()
+    def stock_edit_pil(self, image: Image.Image, prompt: str, seed: int) -> Image.Image:
+        """Return the normal diffusers pipeline edit used for public artifacts.
+
+        ``edit_tensor`` is intentionally a differentiable reconstruction of the
+        InstructPix2Pix denoising loop. That path is useful for gradients, but
+        it can diverge from the stock ``StableDiffusionInstructPix2PixPipeline``
+        call for some perturbed inputs. Public result images and reports should
+        therefore be regenerated with this method.
+        """
+
+        generator = torch.Generator(device=self.device).manual_seed(int(seed))
+        result = self.pipe(
+            prompt=prompt,
+            image=image.convert("RGB"),
+            num_inference_steps=int(self.settings.num_inference_steps),
+            guidance_scale=float(self.settings.guidance_scale),
+            image_guidance_scale=float(self.settings.image_guidance_scale),
+            generator=generator,
+        )
+        return result.images[0].convert("RGB")

@@ -165,9 +165,38 @@ Inspect:
 <case-run>/stock_replay_verification/stock_replay_sheet.png
 ```
 
-If `stock_vs_saved_best_wrapper_ssim` is high, the saved differentiable edit is
-reproduced by the normal stock pipeline for that saved perturbed image. If it is
-low, the failure is a wrapper/path artifact and should not be trusted.
+Current FACE3 code saves public report images from the stock/no-grad pipeline.
+For older runs, if `stock_vs_saved_best_wrapper_ssim` is low, the saved
+`perturbed_best_edited.png` is a wrapper/path artifact and should be repaired
+before report generation.
+
+## 5b. Repair already completed old runs before reporting
+
+Use this on runs created before the public-image fix. It overwrites the public
+edited images with stock/no-grad InstructPix2Pix replay outputs and preserves the
+old wrapper-path images as explicit debug artifacts:
+
+```text
+original_edited_gradient_reference.png
+perturbed_best_edited_gradient_path.png
+perturbed_final_edited_gradient_path.png
+```
+
+It also regenerates `comparison_sheet.png` and updates `summary.json` so report
+tables use the stock-public best/final metrics.
+
+```bash
+cd /home/interns/Desktop/face3
+
+$HOME/.local/bin/micromamba run \
+  -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000 \
+  python -m face3.scripts.fix_public_stock_edits \
+  --run-root outputs/edited_output_identity_2/20260707_101435_edited_output_identity_all_sequential \
+  --arcface-checkpoint /home/interns/Desktop/face3/models/arcface/iresnet100.pth
+```
+
+For a different completed run, replace `--run-root`. If `--run-root` is omitted,
+the script picks the latest run folder under `--results-root`.
 
 Do not run this until smoke timing gives a sane ETA.
 
