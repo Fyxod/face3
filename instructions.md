@@ -200,8 +200,8 @@ cd /home/interns/Desktop/face3
 $HOME/.local/bin/micromamba run \
   -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000 \
   python -m face3.scripts.summarize_runs \
-  --results-root outputs/edited_output_identity_dct_image \
-  --output-root outputs/reports/edited_output_identity_dct_image
+  --results-root outputs/edited_output_identity_1 \
+  --output-root outputs/reports/edited_output_identity_1
 ```
 
 ## 7. Push results
