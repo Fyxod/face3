@@ -28,7 +28,7 @@
       "px_limit": null
     },
     "dct": {
-      "enabled": true,
+      "enabled": false,
       "mode": "block_frequency_gain",
       "block_size": 8,
       "frequency_mask": "all_ac",

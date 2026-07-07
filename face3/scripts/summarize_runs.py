@@ -19,7 +19,7 @@ from PIL import Image, ImageChops, ImageEnhance, ImageOps
 
 
 TITLE = "FACE3: Edited-output ArcFace White-box Optimization"
-SUBTITLE = "Differentiable InstructPix2Pix edit identity results with spatial + image-frequency perturbations"
+SUBTITLE = "Differentiable InstructPix2Pix edit identity results with geometric perturbations"
 AUTHOR = "Parth Katiyar"
 
 
@@ -592,7 +592,7 @@ def make_pdf(data: dict[str, Any], output_root: Path, pdf_path: Path, compress_i
     )
     p(
         "TPS, Delaunay, and rolling are coordinate perturbations. DCT is a blockwise "
-        "image-frequency coefficient perturbation and is not included in spatial flow visualizations."
+        "image-frequency coefficient perturbation."
     )
     p("Run matrix and final values", "Heading2")
     add_table(data["per_run_rows"], per_cols, font_size=5)

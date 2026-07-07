@@ -1,6 +1,6 @@
 # FACE3: Edited-output ArcFace White-box Optimization
 
-Differentiable InstructPix2Pix edit identity results with spatial + image-frequency perturbations
+Differentiable InstructPix2Pix edit identity results with geometric perturbations
 
 FACE3 optimizes `Z = cosine_similarity(ArcFace(original_edit), ArcFace(perturbed_edit))` with `loss = Z`. DCT is reported as an image-frequency coefficient perturbation, not a spatial flow.
 

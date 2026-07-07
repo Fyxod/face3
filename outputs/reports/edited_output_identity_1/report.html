@@ -18,7 +18,7 @@
     .path { font-family:Consolas, monospace; font-size:12px; word-break:break-all; }
     
 </style></head><body><main>
-<h1>FACE3: Edited-output ArcFace White-box Optimization</h1><p class='subtitle'>Differentiable InstructPix2Pix edit identity results with spatial + image-frequency perturbations</p><p class='small'>Author: Parth Katiyar</p>
+<h1>FACE3: Edited-output ArcFace White-box Optimization</h1><p class='subtitle'>Differentiable InstructPix2Pix edit identity results with geometric perturbations</p><p class='small'>Author: Parth Katiyar</p>
 <div class='card'><p>FACE3 optimizes <code>Z = cosine_similarity</code> between frozen ArcFace iResNet-100 embeddings of the clean InstructPix2Pix edit and the perturbed InstructPix2Pix edit. The loss is exactly <code>loss = Z</code>. InstructPix2Pix and ArcFace weights are frozen; only perturbation parameters are optimized. TPS, Delaunay, and rolling are coordinate perturbations. DCT is a blockwise image-frequency coefficient perturbation, not a flow field.</p></div>
 <h2>1. Run matrix</h2><p>Four prompt-labeled cases are retained. The prompt conditions the differentiable InstructPix2Pix edit inside the optimization objective.</p>
 <div class='table-wrap'><table><thead><tr>
