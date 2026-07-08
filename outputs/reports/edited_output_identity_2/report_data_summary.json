@@ -25,7 +25,7 @@
   "html": "report.html",
   "markdown": "report.md",
   "num_missing": 0,
-  "num_runs": 1,
+  "num_runs": 4,
   "pdf": "report.pdf",
   "run_root": "outputs/edited_output_identity_2/20260707_101435_edited_output_identity_all_sequential"
 }

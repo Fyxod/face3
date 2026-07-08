@@ -191,7 +191,7 @@ cd /home/interns/Desktop/face3
 $HOME/.local/bin/micromamba run \
   -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000 \
   python -m face3.scripts.fix_public_stock_edits \
-  --run-root outputs/edited_output_identity_2/20260707_101435_edited_output_identity_all_sequential \
+  --run-root outputs/edited_output_identity_3/20260707_170259_edited_output_identity_all_sequential \
   --arcface-checkpoint /home/interns/Desktop/face3/models/arcface/iresnet100.pth
 ```
 

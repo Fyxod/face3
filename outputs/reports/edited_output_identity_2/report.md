@@ -10,6 +10,18 @@ FACE3 optimizes `Z = cosine_similarity(ArcFace(original_edit), ArcFace(perturbed
 
 ![strip](strips/face_face_002_add_black_sunglasses.png)
 
+### face_002 / add headphones
+
+![strip](strips/face_face_002_add_headphones.png)
+
+### face_005 / add black sunglasses
+
+![strip](strips/face_face_005_add_black_sunglasses.png)
+
+### face_005 / add headphones
+
+![strip](strips/face_face_005_add_headphones.png)
+
 ## Graphs
 
 ### Z vs iteration
