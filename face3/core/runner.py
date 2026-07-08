@@ -156,6 +156,10 @@ REQUIRED_HISTORY_FIELDS = {
     "num_at_max_total",
     "components_at_boundary",
     "total_geometry_grad_norm",
+    "input_identity_cosine_similarity_raw",
+    "input_identity_cosine_distance",
+    "input_identity_similarity_score_pct",
+    "input_identity_l2_embedding_distance",
 }
 
 
@@ -199,6 +203,27 @@ def _float_terms(terms: dict[str, Any]) -> dict[str, float]:
         elif isinstance(value, (int, float)):
             out[key] = float(value)
     return out
+
+
+def _prefixed_identity_terms(prefix: str, terms: dict[str, Any]) -> dict[str, float]:
+    flat = _float_terms(terms)
+    mapping = {
+        "identity_cosine_similarity_raw": "cosine_similarity_raw",
+        "identity_cosine_distance": "cosine_distance",
+        "identity_similarity_score_pct": "similarity_score_pct",
+        "identity_l2_embedding_distance": "l2_embedding_distance",
+        "identity_angle_radians": "angle_radians",
+        "identity_angle_degrees": "angle_degrees",
+        "original_embedding_norm": "left_embedding_norm",
+        "perturbed_embedding_norm": "right_embedding_norm",
+    }
+    return {f"{prefix}_{new_key}": flat[old_key] for old_key, new_key in mapping.items() if old_key in flat}
+
+
+def _identity_pair_metrics(arcface, left, right, prefix: str) -> dict[str, float]:
+    reference = prepare_identity_reference(arcface, left)
+    _, terms = identity_objective(arcface, right, reference)
+    return _prefixed_identity_terms(prefix, terms)
 
 
 def _history_fields_ok(row: dict[str, Any]) -> bool:
@@ -330,6 +355,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
     original = Image.open(image_path).convert("RGB")
     original.save(output_dir / "original.png")
     original_tensor = pil_to_tensor(original, device)
+    input_identity_reference = prepare_identity_reference(arcface, original_tensor)
 
     geometry_config = load_face_geometry_config(cfg.geometry_config_path) if cfg.geometry_config_path else FaceGeometryConfig()
     if cfg.init:
@@ -390,6 +416,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
     with torch.no_grad():
         p0, aux0 = geometry(original_tensor)
         metrics0 = tensor_pair_metrics(p0, original_tensor, prefix="")
+        _, input_identity_terms0 = identity_objective(arcface, p0, input_identity_reference)
         edit0 = editor.edit_tensor(p0, spec.case.prompt, spec.run_seed).detach()
         Z0, terms0 = identity_objective(arcface, edit0, reference)
         row0 = {
@@ -410,6 +437,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
             "ssim_to_original": metrics0["ssim"],
             "mse_to_original": metrics0["mse"],
             "l2_to_original": metrics0["l2"],
+            **_prefixed_identity_terms("input_identity", input_identity_terms0),
             **_float_terms(terms0),
             **_float_terms(_edit_terms_aliases(terms0)),
             **aux0["diagnostics"],
@@ -454,6 +482,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
 
         with torch.no_grad():
             metrics_original = tensor_pair_metrics(perturbed, original_tensor, prefix="")
+            _, input_identity_terms = identity_objective(arcface, perturbed, input_identity_reference)
         seconds_iter = time.monotonic() - iter_started
         current_Z = float(Z.detach().float().cpu())
         prev_best = best["row"]["Z"] if best is not None else 1e30
@@ -475,6 +504,7 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
             "ssim_to_original": metrics_original["ssim"],
             "mse_to_original": metrics_original["mse"],
             "l2_to_original": metrics_original["l2"],
+            **_prefixed_identity_terms("input_identity", input_identity_terms),
             **_float_terms(terms),
             **_float_terms(_edit_terms_aliases(terms)),
             **aux["diagnostics"],
@@ -533,12 +563,33 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
         stock_clean_tensor = pil_to_tensor(stock_clean_edit, device)
         stock_best_tensor = pil_to_tensor(stock_best_edit, device)
         stock_final_tensor = pil_to_tensor(stock_final_edit, device)
+        stock_best_input_tensor = pil_to_tensor(best_perturbed, device)
+        stock_final_input_tensor = pil_to_tensor(final_perturbed, device)
         stock_reference = prepare_identity_reference(arcface, stock_clean_tensor)
         best_Z_stock_public, best_terms_stock_public = identity_objective(arcface, stock_best_tensor, stock_reference)
         final_Z_stock_public, final_terms_stock_public = identity_objective(arcface, stock_final_tensor, stock_reference)
+        original_vs_original_edit_identity = _identity_pair_metrics(
+            arcface, original_tensor, stock_clean_tensor, "original_vs_original_edit_identity"
+        )
+        best_input_identity = _identity_pair_metrics(arcface, original_tensor, stock_best_input_tensor, "best_input_identity")
+        final_input_identity = _identity_pair_metrics(arcface, original_tensor, stock_final_input_tensor, "final_input_identity")
+        perturbed_best_vs_perturbed_best_edit_identity = _identity_pair_metrics(
+            arcface, stock_best_input_tensor, stock_best_tensor, "perturbed_best_vs_perturbed_best_edit_identity"
+        )
+        perturbed_final_vs_perturbed_final_edit_identity = _identity_pair_metrics(
+            arcface, stock_final_input_tensor, stock_final_tensor, "perturbed_final_vs_perturbed_final_edit_identity"
+        )
         clean_stock_vs_gradient_reference = image_metrics(stock_clean_edit, clean_edit)
         best_gradient_vs_stock = image_metrics(stock_best_edit, Image.open(output_dir / "perturbed_best_edited_gradient_path.png"))
         final_gradient_vs_stock = image_metrics(stock_final_edit, Image.open(output_dir / "perturbed_final_edited_gradient_path.png"))
+        if float(final_Z_stock_public.detach().float().cpu()) <= float(best_Z_stock_public.detach().float().cpu()):
+            best_saved_stock_public_Z = final_Z_stock_public
+            best_saved_stock_public_source = "final_input"
+            best_saved_stock_public_iter = cfg.iters
+        else:
+            best_saved_stock_public_Z = best_Z_stock_public
+            best_saved_stock_public_source = "gradient_best_input"
+            best_saved_stock_public_iter = best["row"]["iter"]
 
     _component_flow_images(final_aux, output_dir, geometry.component_limit_for_flow, geometry)
     flow_to_pil(best["aux"]["displacement"], geometry.component_limit_for_flow).save(output_dir / "combined_flow_best.png")
@@ -623,9 +674,13 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
         "final_Z": float(final_Z_stock_public.detach().float().cpu()),
         "final_loss": float(final_Z_stock_public.detach().float().cpu()),
         "best_iter_by_Z": best["row"]["iter"],
-        "best_Z": float(best_Z_stock_public.detach().float().cpu()),
+        "best_Z": float(best_saved_stock_public_Z.detach().float().cpu()),
         "final_Z_stock_public": float(final_Z_stock_public.detach().float().cpu()),
         "best_Z_stock_public": float(best_Z_stock_public.detach().float().cpu()),
+        "stock_public_Z_at_gradient_best": float(best_Z_stock_public.detach().float().cpu()),
+        "best_saved_stock_public_Z": float(best_saved_stock_public_Z.detach().float().cpu()),
+        "best_saved_stock_public_source": best_saved_stock_public_source,
+        "best_saved_stock_public_iter": best_saved_stock_public_iter,
         "final_Z_gradient_path": float(final_Z_gradient_path.detach().float().cpu()),
         "best_Z_gradient_path": best["row"]["Z"],
         "public_edit_images_regenerated_with_stock_pipeline": True,
@@ -644,6 +699,11 @@ def optimize_one(spec: RunSpec, cfg: RunConfig, arcface, editor, device, output_
         "final_edit_identity_similarity_score_pct": float(_float_terms(final_terms_stock_public)["identity_similarity_score_pct"]),
         "best_edit_identity_cosine_similarity_raw": float(_float_terms(best_terms_stock_public)["identity_cosine_similarity_raw"]),
         "best_edit_identity_similarity_score_pct": float(_float_terms(best_terms_stock_public)["identity_similarity_score_pct"]),
+        **best_input_identity,
+        **final_input_identity,
+        **original_vs_original_edit_identity,
+        **perturbed_best_vs_perturbed_best_edit_identity,
+        **perturbed_final_vs_perturbed_final_edit_identity,
         "mean_seconds_iter": float(sum(row["seconds_iter"] for row in optimization_rows) / max(len(optimization_rows), 1)),
         "elapsed_seconds": elapsed,
         "final_psnr_to_original": final_row["psnr_to_original"],

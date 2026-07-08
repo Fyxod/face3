@@ -188,6 +188,24 @@ def _identity_terms(arcface: ArcFaceIResNet100 | None, clean: Image.Image, best:
     }
 
 
+def _prefixed_pair_terms(arcface: ArcFaceIResNet100 | None, left: Image.Image, right: Image.Image, prefix: str, device: torch.device) -> dict[str, Any]:
+    if arcface is None:
+        return {}
+    with torch.no_grad():
+        left_tensor = pil_to_tensor(left, device)
+        right_tensor = pil_to_tensor(right, device)
+        reference = prepare_identity_reference(arcface, left_tensor)
+        _, terms = identity_objective(arcface, right_tensor, reference)
+    mapping = {
+        "identity_cosine_similarity_raw": "cosine_similarity_raw",
+        "identity_cosine_distance": "cosine_distance",
+        "identity_similarity_score_pct": "similarity_score_pct",
+        "identity_l2_embedding_distance": "l2_embedding_distance",
+        "identity_angle_degrees": "angle_degrees",
+    }
+    return {f"{prefix}_{new_key}": float(terms[old_key].detach().float().cpu()) for old_key, new_key in mapping.items() if old_key in terms}
+
+
 def _repair_one(run_dir: Path, pipe, arcface: ArcFaceIResNet100 | None, device: torch.device, dry_run: bool) -> dict[str, Any]:
     config = _read_json(run_dir / "config_resolved.json")
     summary_path = run_dir / "summary.json"
@@ -228,6 +246,34 @@ def _repair_one(run_dir: Path, pipe, arcface: ArcFaceIResNet100 | None, device: 
     output_metrics_best = image_metrics(stock_clean, stock_best)
     output_metrics_final = image_metrics(stock_clean, stock_final)
     identity = _identity_terms(arcface, stock_clean, stock_best, stock_final, device)
+    pair_identity = {
+        **_prefixed_pair_terms(arcface, original, stock_clean, "original_vs_original_edit_identity", device),
+        **_prefixed_pair_terms(arcface, perturbed_best, stock_best, "perturbed_best_vs_perturbed_best_edit_identity", device),
+        **_prefixed_pair_terms(arcface, perturbed_final, stock_final, "perturbed_final_vs_perturbed_final_edit_identity", device),
+        **_prefixed_pair_terms(arcface, original, perturbed_best, "best_input_identity", device),
+        **_prefixed_pair_terms(arcface, original, perturbed_final, "final_input_identity", device),
+    }
+    if identity:
+        best_stock = float(identity["best_Z_stock_public"])
+        final_stock = float(identity["final_Z_stock_public"])
+        if final_stock <= best_stock:
+            identity.update(
+                {
+                    "stock_public_Z_at_gradient_best": best_stock,
+                    "best_saved_stock_public_Z": final_stock,
+                    "best_saved_stock_public_source": "final_input",
+                    "best_saved_stock_public_iter": summary.get("iters"),
+                }
+            )
+        else:
+            identity.update(
+                {
+                    "stock_public_Z_at_gradient_best": best_stock,
+                    "best_saved_stock_public_Z": best_stock,
+                    "best_saved_stock_public_source": "gradient_best_input",
+                    "best_saved_stock_public_iter": summary.get("best_iter_by_Z"),
+                }
+            )
 
     old_best_path = run_dir / "perturbed_best_edited_gradient_path.png"
     old_final_path = run_dir / "perturbed_final_edited_gradient_path.png"
@@ -252,6 +298,7 @@ def _repair_one(run_dir: Path, pipe, arcface: ArcFaceIResNet100 | None, device: 
         **{f"best_stock_public_output_{key}": value for key, value in output_metrics_best.items()},
         **{f"final_stock_public_output_{key}": value for key, value in output_metrics_final.items()},
         **identity,
+        **pair_identity,
         **gradient_comparison,
     }
 
@@ -273,7 +320,7 @@ def _repair_one(run_dir: Path, pipe, arcface: ArcFaceIResNet100 | None, device: 
         if "final_Z_gradient_path" not in summary and summary.get("final_Z") is not None:
             summary["final_Z_gradient_path"] = summary.get("final_Z")
         if identity:
-            summary["best_Z"] = identity["best_Z_stock_public"]
+            summary["best_Z"] = identity["best_saved_stock_public_Z"]
             summary["final_Z"] = identity["final_Z_stock_public"]
             summary["final_loss"] = identity["final_Z_stock_public"]
             summary["best_identity_cosine_similarity_raw"] = identity["best_stock_public_identity_cosine_similarity_raw"]
@@ -310,6 +357,7 @@ def _repair_one(run_dir: Path, pipe, arcface: ArcFaceIResNet100 | None, device: 
             }
         )
         summary.update(identity)
+        summary.update(pair_identity)
         edit_meta = dict(summary.get("differentiable_instructpix2pix", {}))
         edit_meta.update(
             {

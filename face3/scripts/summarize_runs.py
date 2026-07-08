@@ -311,6 +311,17 @@ def summary_value(summary: dict[str, Any], preferred: str, fallback: str) -> Any
     return summary.get(fallback) if value is None or value == "" else value
 
 
+def best_saved_stock_z(summary: dict[str, Any]) -> Any:
+    explicit = summary.get("best_saved_stock_public_Z")
+    if explicit is not None and explicit != "":
+        return explicit
+    final_z = to_float(summary.get("final_Z_stock_public") or summary.get("final_Z"))
+    best_stock = to_float(summary.get("best_Z_stock_public") or summary.get("best_Z"))
+    if final_z is not None and best_stock is not None:
+        return min(final_z, best_stock)
+    return summary.get("best_Z")
+
+
 def plot_components(path: Path, runs: list[dict[str, Any]]) -> None:
     keys = ["tps_mean_disp", "delaunay_mean_disp", "rolling_mean_disp"]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -339,12 +350,20 @@ def make_graphs(runs: list[dict[str, Any]], output_root: Path) -> list[dict[str,
     graph_dir = output_root / "graphs"
     graphs = []
     specs = [
-        ("Z vs iteration", "Z", "Z", "z_vs_iteration.png"),
+        ("Gradient-path Z vs iteration", "Z", "Z", "z_vs_iteration.png"),
         ("Loss vs iteration", "loss", "loss", "loss_vs_iteration.png"),
         ("PSNR to original vs iteration", "psnr_to_original", "PSNR", "psnr_vs_iteration.png"),
         ("SSIM to original vs iteration", "ssim_to_original", "SSIM", "ssim_vs_iteration.png"),
+        (
+            "Input ArcFace identity similarity vs iteration",
+            "input_identity_similarity_score_pct",
+            "original vs perturbed identity similarity (%)",
+            "input_identity_similarity_vs_iteration.png",
+        ),
     ]
     for title, key, ylabel, name in specs:
+        if key == "input_identity_similarity_score_pct" and not any_history_key(runs, key):
+            continue
         path = graph_dir / name
         plot_lines(path, title, ylabel, runs, key)
         graphs.append({"title": title, "path": path.relative_to(output_root).as_posix()})
@@ -392,8 +411,10 @@ def build_tables(runs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list
                 "face_id": run["face_id"],
                 "prompt": run["prompt"],
                 "final_Z": summary_value(summary, "final_Z_stock_public", "final_Z"),
-                "best_Z": summary_value(summary, "best_Z_stock_public", "best_Z"),
+                "best_Z": best_saved_stock_z(summary),
                 "best_Z_gradient_path": summary.get("best_Z_gradient_path"),
+                "stock_Z_at_gradient_best": summary_value(summary, "stock_public_Z_at_gradient_best", "best_Z_stock_public"),
+                "best_saved_stock_public_source": summary.get("best_saved_stock_public_source"),
                 "best_iter_by_Z": summary.get("best_iter_by_Z"),
                 "final_identity_cosine_similarity_raw": summary_value(
                     summary, "final_stock_public_identity_cosine_similarity_raw", "final_identity_cosine_similarity_raw"
@@ -403,6 +424,15 @@ def build_tables(runs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list
                 ),
                 "ssim_to_original": summary.get("final_ssim_to_original"),
                 "psnr_to_original": summary.get("final_psnr_to_original"),
+                "best_input_identity_similarity_score_pct": summary.get("best_input_identity_similarity_score_pct"),
+                "final_input_identity_similarity_score_pct": summary.get("final_input_identity_similarity_score_pct"),
+                "original_vs_original_edit_identity_similarity_score_pct": summary.get("original_vs_original_edit_identity_similarity_score_pct"),
+                "perturbed_best_vs_perturbed_best_edit_identity_similarity_score_pct": summary.get(
+                    "perturbed_best_vs_perturbed_best_edit_identity_similarity_score_pct"
+                ),
+                "perturbed_final_vs_perturbed_final_edit_identity_similarity_score_pct": summary.get(
+                    "perturbed_final_vs_perturbed_final_edit_identity_similarity_score_pct"
+                ),
                 "output_ssim": summary_value(summary, "best_stock_public_output_ssim", "best_output_ssim"),
                 "output_l2": summary_value(summary, "best_stock_public_output_l2", "best_output_l2"),
                 "max_disp_px": summary.get("final_combined_max_disp_px"),
@@ -428,10 +458,15 @@ def build_html(data: dict[str, Any]) -> str:
     per_cols = [
         ("face_id", "face"),
         ("prompt", "prompt"),
-        ("final_Z", "final Z"),
-        ("best_Z", "best Z"),
-        ("final_identity_cosine_similarity_raw", "ArcFace cosine sim"),
-        ("final_identity_similarity_score_pct", "cosine score %"),
+        ("final_Z", "final stock Z"),
+        ("best_Z", "best saved stock Z"),
+        ("best_Z_gradient_path", "best gradient Z"),
+        ("stock_Z_at_gradient_best", "stock Z at gradient best"),
+        ("final_identity_cosine_similarity_raw", "final edit cosine sim"),
+        ("final_identity_similarity_score_pct", "final edit score %"),
+        ("original_vs_original_edit_identity_similarity_score_pct", "orig vs orig-edit %"),
+        ("perturbed_best_vs_perturbed_best_edit_identity_similarity_score_pct", "perturbed vs best-edit %"),
+        ("best_input_identity_similarity_score_pct", "orig vs perturbed %"),
         ("ssim_to_original", "SSIM"),
         ("psnr_to_original", "PSNR"),
         ("output_ssim", "edit output SSIM"),
@@ -465,6 +500,7 @@ def build_html(data: dict[str, Any]) -> str:
         "</style></head><body><main>",
         f"<h1>{html.escape(TITLE)}</h1><p class='subtitle'>{html.escape(SUBTITLE)}</p><p class='small'>Author: {html.escape(AUTHOR)}</p>",
         "<div class='card'><p>FACE3 optimizes <code>Z = cosine_similarity</code> between frozen ArcFace iResNet-100 embeddings of the clean InstructPix2Pix edit and the perturbed InstructPix2Pix edit. The loss is exactly <code>loss = Z</code>. InstructPix2Pix and ArcFace weights are frozen; only perturbation parameters are optimized. TPS, Delaunay, and rolling are coordinate perturbations. DCT is a blockwise image-frequency coefficient perturbation, not a flow field.</p></div>",
+        "<div class='card'><p>The iteration graph shows the differentiable gradient-path <code>Z</code> used for optimization. Public edited images and stock-public Z values are regenerated at the end with the normal InstructPix2Pix pipeline. Therefore <em>best gradient Z</em> and <em>stock Z at gradient best</em> are intentionally separate columns.</p></div>",
         "<h2>1. Run matrix</h2><p>Four prompt-labeled cases are retained. The prompt conditions the differentiable InstructPix2Pix edit inside the optimization objective.</p>",
         table_html(data["per_run_rows"], per_cols),
         "<h2>2. Case image strips</h2>",
@@ -489,6 +525,8 @@ def build_markdown(data: dict[str, Any]) -> str:
         SUBTITLE,
         "",
         "FACE3 optimizes `Z = cosine_similarity(ArcFace(original_edit), ArcFace(perturbed_edit))` with `loss = Z`. DCT is reported as an image-frequency coefficient perturbation, not a spatial flow.",
+        "",
+        "The Z iteration graph is the differentiable gradient-path Z. Public edited images and stock-public Z values are regenerated at the end with the normal InstructPix2Pix pipeline, so gradient-path Z and stock-public Z are reported separately.",
         "",
         "## Image strips",
         "",
@@ -581,10 +619,14 @@ def make_pdf(data: dict[str, Any], output_root: Path, pdf_path: Path, compress_i
     per_cols = [
         ("face_id", "face"),
         ("prompt", "prompt"),
-        ("final_Z", "final Z"),
-        ("best_Z", "best Z"),
-        ("final_identity_cosine_similarity_raw", "cosine sim"),
-        ("final_identity_similarity_score_pct", "score %"),
+        ("final_Z", "final stock Z"),
+        ("best_Z", "best saved stock Z"),
+        ("best_Z_gradient_path", "best gradient Z"),
+        ("stock_Z_at_gradient_best", "stock Z @ grad best"),
+        ("final_identity_similarity_score_pct", "final edit %"),
+        ("original_vs_original_edit_identity_similarity_score_pct", "orig/orig-edit %"),
+        ("perturbed_best_vs_perturbed_best_edit_identity_similarity_score_pct", "pert/best-edit %"),
+        ("best_input_identity_similarity_score_pct", "orig/pert %"),
         ("ssim_to_original", "SSIM"),
         ("psnr_to_original", "PSNR"),
         ("output_ssim", "edit SSIM"),
@@ -606,6 +648,11 @@ def make_pdf(data: dict[str, Any], output_root: Path, pdf_path: Path, compress_i
     p(
         "TPS, Delaunay, and rolling are coordinate perturbations. DCT is a blockwise "
         "image-frequency coefficient perturbation."
+    )
+    p(
+        "The Z curve is the differentiable gradient-path Z used for optimization. "
+        "Public edited images and stock-public Z values are regenerated at the end "
+        "with the normal InstructPix2Pix pipeline, so these values are reported separately."
     )
     p("Run matrix and final values", "Heading2")
     add_table(data["per_run_rows"], per_cols, font_size=5)
