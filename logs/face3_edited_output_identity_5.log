@@ -12,3 +12,16 @@
   with torch.cuda.amp.autocast(enabled=self.fp16):
 /home/interns/Desktop/face3/face3/models/iresnet.py:94: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
   with torch.cuda.amp.autocast(enabled=self.fp16):
+/home/interns/Desktop/face3/face3/models/iresnet.py:94: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with torch.cuda.amp.autocast(enabled=self.fp16):
+/home/interns/Desktop/face3/face3/models/iresnet.py:94: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
+  with torch.cuda.amp.autocast(enabled=self.fp16):
+[face3] running edited_output_identity__face_002__add_black_sunglasses image=/home/interns/Desktop/mat/data/face_002/instruct_512.png
+[face3] generating fixed clean edit reference: prompt='add black sunglasses' steps=20
+[face3] running edited_output_identity__face_002__add_headphones image=/home/interns/Desktop/mat/data/face_002/instruct_512.png
+[face3] generating fixed clean edit reference: prompt='add headphones' steps=20
+[face3] running edited_output_identity__face_005__add_black_sunglasses image=/home/interns/Desktop/mat/data/face_005/instruct_512.png
+[face3] generating fixed clean edit reference: prompt='add black sunglasses' steps=20
+[face3] running edited_output_identity__face_005__add_headphones image=/home/interns/Desktop/mat/data/face_005/instruct_512.png
+[face3] generating fixed clean edit reference: prompt='add headphones' steps=20
+[face3-run] wrote: outputs/edited_output_identity_5/20260708_102529_edited_output_identity_all_sequential
