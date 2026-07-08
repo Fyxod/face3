@@ -43,12 +43,53 @@ FACE3 uses the same perturbation module family as FACE2:
 - Rolling shutter
 - DCT-domain image frequency perturbation
 - FFT phase module
+- Polar coordinate radial/twist warp
+- B-spline / Bezier-style free-form control-grid warp
+- Lens barrel radial distortion
+- Lens pincushion radial distortion
+- Möbius complex-plane warp
+- Laplacian-smoothed displacement warp
+- Geodesic-inspired elliptical face deformation
+- Differential-surface-gradient coordinate warp
 
-TPS, Delaunay, and rolling shutter produce spatial displacement fields. These fields are summed and applied through `grid_sample`.
+TPS, Delaunay, rolling shutter, polar, B-spline/Bezier FFD, lens, Möbius, Laplacian-smoothed, geodesic-inspired, and differential-surface-gradient components produce spatial displacement fields. These fields are summed and applied through `grid_sample`.
 
 The active DCT module performs blockwise image DCT coefficient changes and reconstructs the image with inverse DCT. It is not a coordinate flow field.
 
 All enabled perturbation parameters are optimized jointly. After every optimizer step, parameters are projected/clamped using `configs/geometry_default.json`.
+
+The new components are disabled by default in `configs/geometry_default.json`, so existing runs do not change unless the JSON toggles are set to `true`.
+
+An opt-in preset that enables the extended spatial components is available at:
+
+```text
+configs/geometry_extended_all.json
+```
+
+Pass it with:
+
+```bash
+--geometry-config configs/geometry_extended_all.json
+```
+
+Notes on feasibility:
+
+- Polar, B-spline/Bezier-style FFD, lens barrel/pincushion, and Möbius are direct 2D image-plane coordinate warps.
+- Laplacian smoothing is a regularization/smoothing operator on meshes or displacement fields, not a single canonical image warp. FACE3 implements it as a trainable low-resolution field diffused with a discrete Laplacian-like neighbor average.
+- The referenced geodesic face deformation work is a 3D/2.5D facial-surface method. FACE3 only has RGB images, so it implements a 2D geodesic-inspired elliptical face metric surrogate.
+- Differential geometry of surfaces is a 3D/surface framework. FACE3 implements a practical 2D Monge-patch-style surrogate: a scalar height map whose image-plane gradient becomes a coordinate displacement.
+
+To generate model-free visual samples for each individual perturbation:
+
+```bash
+python -m face3.scripts.generate_perturbation_samples
+```
+
+This writes strips and notes under:
+
+```text
+perturbation_samples/
+```
 
 ## Models
 

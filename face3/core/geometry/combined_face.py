@@ -27,20 +27,46 @@ class FaceGeometryConfig:
     dct_frequency_mask: str = "all_ac"
     dct_exclude_dc: bool = True
     fft_phase_size: int = 8
+    bspline_size: int = 6
+    laplacian_size: int = 7
+    differential_surface_size: int = 7
     edge_falloff_px: float = 16.0
     tps_enabled: bool = True
     delaunay_enabled: bool = True
     rolling_enabled: bool = True
     dct_enabled: bool = True
     fft_phase_enabled: bool = True
+    polar_enabled: bool = False
+    bspline_enabled: bool = False
+    lens_barrel_enabled: bool = False
+    lens_pincushion_enabled: bool = False
+    mobius_enabled: bool = False
+    laplacian_enabled: bool = False
+    geodesic_enabled: bool = False
+    differential_surface_enabled: bool = False
     tps_norm_limit: float = 0.007
     delaunay_norm_limit: float = 0.010
     rolling_norm_limit: float = 0.009
+    polar_radial_norm_limit: float = 0.020
+    polar_twist_limit_rad: float = 0.35
+    bspline_norm_limit: float = 0.020
+    lens_k_limit: float = 0.35
+    mobius_limit: float = 0.20
+    laplacian_norm_limit: float = 0.020
+    geodesic_norm_limit: float = 0.030
+    differential_surface_height_limit: float = 0.040
+    differential_surface_px_scale: float = 12.0
     tps_px_limit: float | None = None
     delaunay_px_limit: float | None = None
     rolling_px_limit: float | None = None
+    polar_radial_px_limit: float | None = None
+    bspline_px_limit: float | None = None
+    laplacian_px_limit: float | None = None
+    geodesic_px_limit: float | None = None
     dct_gain_limit: float = 0.5
     fft_phase_limit_rad: float = math.pi
+    laplacian_smoothing_steps: int = 8
+    laplacian_smoothing_alpha: float = 0.35
     max_combined_disp_px: float | None = None
 
 
@@ -82,12 +108,20 @@ def load_face_geometry_config(path: str | Path | None) -> FaceGeometryConfig:
         "rolling": "rolling",
         "dct": "dct",
         "fft_phase": "fft_phase",
+        "polar": "polar",
+        "bspline": "bspline",
+        "lens_barrel": "lens_barrel",
+        "lens_pincushion": "lens_pincushion",
+        "mobius": "mobius",
+        "laplacian": "laplacian",
+        "geodesic": "geodesic",
+        "differential_surface": "differential_surface",
     }
     for name, prefix in mapping.items():
         block = components.get(name, {})
         if "enabled" in block:
             values[f"{prefix}_enabled"] = bool(block["enabled"])
-        if name not in {"fft_phase", "dct"}:
+        if name in {"tps", "delaunay", "rolling"}:
             if "norm_limit" in block:
                 values[f"{prefix}_norm_limit"] = float(block["norm_limit"])
             if "px_limit" in block:
@@ -101,8 +135,52 @@ def load_face_geometry_config(path: str | Path | None) -> FaceGeometryConfig:
                 values["dct_exclude_dc"] = bool(block["exclude_dc"])
             if "gain_limit" in block:
                 values["dct_gain_limit"] = float(block["gain_limit"])
-        elif "phase_limit_rad" in block:
-            values["fft_phase_limit_rad"] = float(block["phase_limit_rad"])
+        elif name == "fft_phase":
+            if "phase_limit_rad" in block:
+                values["fft_phase_limit_rad"] = float(block["phase_limit_rad"])
+        elif name == "polar":
+            if "radial_norm_limit" in block:
+                values["polar_radial_norm_limit"] = float(block["radial_norm_limit"])
+            if "radial_px_limit" in block:
+                values["polar_radial_px_limit"] = None if block["radial_px_limit"] is None else float(block["radial_px_limit"])
+            if "twist_limit_rad" in block:
+                values["polar_twist_limit_rad"] = float(block["twist_limit_rad"])
+        elif name == "bspline":
+            if "size" in block:
+                values["bspline_size"] = int(block["size"])
+            if "norm_limit" in block:
+                values["bspline_norm_limit"] = float(block["norm_limit"])
+            if "px_limit" in block:
+                values["bspline_px_limit"] = None if block["px_limit"] is None else float(block["px_limit"])
+        elif name in {"lens_barrel", "lens_pincushion"}:
+            if "k_limit" in block:
+                values["lens_k_limit"] = float(block["k_limit"])
+        elif name == "mobius":
+            if "limit" in block:
+                values["mobius_limit"] = float(block["limit"])
+        elif name == "laplacian":
+            if "size" in block:
+                values["laplacian_size"] = int(block["size"])
+            if "norm_limit" in block:
+                values["laplacian_norm_limit"] = float(block["norm_limit"])
+            if "px_limit" in block:
+                values["laplacian_px_limit"] = None if block["px_limit"] is None else float(block["px_limit"])
+            if "smoothing_steps" in block:
+                values["laplacian_smoothing_steps"] = int(block["smoothing_steps"])
+            if "smoothing_alpha" in block:
+                values["laplacian_smoothing_alpha"] = float(block["smoothing_alpha"])
+        elif name == "geodesic":
+            if "norm_limit" in block:
+                values["geodesic_norm_limit"] = float(block["norm_limit"])
+            if "px_limit" in block:
+                values["geodesic_px_limit"] = None if block["px_limit"] is None else float(block["px_limit"])
+        elif name == "differential_surface":
+            if "size" in block:
+                values["differential_surface_size"] = int(block["size"])
+            if "height_limit" in block:
+                values["differential_surface_height_limit"] = float(block["height_limit"])
+            if "px_scale" in block:
+                values["differential_surface_px_scale"] = float(block["px_scale"])
     return FaceGeometryConfig(**values)
 
 
@@ -144,6 +222,38 @@ def jacobian_diagnostics(field: torch.Tensor) -> dict[str, float]:
     }
 
 
+def _upsample_control_field(control: torch.Tensor, height: int, width: int, mode: str = "bicubic") -> torch.Tensor:
+    return F.interpolate(control, size=(height, width), mode=mode, align_corners=True)
+
+
+def _control_boundary_mask(shape: tuple[int, ...], device: torch.device) -> torch.Tensor:
+    mask = torch.ones(*shape, device=device)
+    if len(shape) >= 4:
+        mask[:, :, 0] = 0
+        mask[:, :, -1] = 0
+        mask[:, :, :, 0] = 0
+        mask[:, :, :, -1] = 0
+    return mask
+
+
+def _pixel_field_from_normalized_delta(
+    delta_x: torch.Tensor,
+    delta_y: torch.Tensor,
+    height: int,
+    width: int,
+) -> torch.Tensor:
+    px = delta_x * float(max(width - 1, 1)) / 2.0
+    py = delta_y * float(max(height - 1, 1)) / 2.0
+    return torch.stack([px, py], dim=0)[None]
+
+
+def _cap_field(field: torch.Tensor, cap_px: float | None) -> torch.Tensor:
+    if cap_px is None or cap_px <= 0:
+        return field
+    magnitude = torch.sqrt(field.square().sum(dim=1, keepdim=True) + 1e-12)
+    return field * torch.clamp(float(cap_px) / magnitude.clamp_min(1e-6), max=1.0)
+
+
 class CombinedFacePerturbation(torch.nn.Module):
     """Combined differentiable FACE perturbation module.
 
@@ -171,10 +281,23 @@ class CombinedFacePerturbation(torch.nn.Module):
             self.config.delaunay_px_limit, self.config.delaunay_norm_limit, height, width
         )
         self.rolling_limit_px = _configured_limit_px(self.config.rolling_px_limit, self.config.rolling_norm_limit, height, width)
+        self.polar_radial_limit_px = _configured_limit_px(
+            self.config.polar_radial_px_limit, self.config.polar_radial_norm_limit, height, width
+        )
+        self.bspline_limit_px = _configured_limit_px(self.config.bspline_px_limit, self.config.bspline_norm_limit, height, width)
+        self.laplacian_limit_px = _configured_limit_px(
+            self.config.laplacian_px_limit, self.config.laplacian_norm_limit, height, width
+        )
+        self.geodesic_limit_px = _configured_limit_px(self.config.geodesic_px_limit, self.config.geodesic_norm_limit, height, width)
         self.component_limit_for_flow = max(
             self.tps_limit_px,
             self.delaunay_limit_px,
             self.rolling_limit_px,
+            self.polar_radial_limit_px,
+            self.bspline_limit_px,
+            self.laplacian_limit_px,
+            self.geodesic_limit_px,
+            float(self.config.differential_surface_height_limit) * float(max(height, width)),
             1.0,
         )
 
@@ -185,7 +308,14 @@ class CombinedFacePerturbation(torch.nn.Module):
             indexing="ij",
         )
         self.register_buffer("base_grid", torch.stack([xx, yy], dim=-1)[None])
+        self.register_buffer("xx_norm", xx)
+        self.register_buffer("yy_norm", yy)
         self.register_buffer("yy", yy[None, None])
+        rr = torch.sqrt(xx.square() + yy.square()).clamp_min(1e-6)
+        self.register_buffer("rr_norm", rr)
+        self.register_buffer("unit_x", xx / rr)
+        self.register_buffer("unit_y", yy / rr)
+        self.register_buffer("ellipse_mask", torch.exp(-((xx / 0.62).square() + ((yy + 0.02) / 0.78).square()))[None, None])
 
         distances = torch.minimum(
             torch.minimum(torch.arange(width, device=device)[None], torch.arange(width - 1, -1, -1, device=device)[None]),
@@ -210,6 +340,32 @@ class CombinedFacePerturbation(torch.nn.Module):
             init_tensor((1, 2, self.config.delaunay_size, self.config.delaunay_size), self.delaunay_limit_px)
         )
         self.roll_params = torch.nn.Parameter(init_tensor((2,), self.rolling_limit_px))
+        if self.config.init == "small_random":
+            polar_init = torch.randn(2, device=device, generator=generator) * self.config.init_fraction
+            polar_init = polar_init * torch.tensor(
+                [self.polar_radial_limit_px, float(self.config.polar_twist_limit_rad)],
+                device=device,
+                dtype=polar_init.dtype,
+            )
+        else:
+            polar_init = torch.zeros(2, device=device)
+        self.polar_params = torch.nn.Parameter(polar_init)
+        self.bspline_raw = torch.nn.Parameter(
+            init_tensor((1, 2, self.config.bspline_size, self.config.bspline_size), self.bspline_limit_px)
+        )
+        self.lens_barrel_k = torch.nn.Parameter(init_tensor((1,), float(self.config.lens_k_limit)))
+        self.lens_pincushion_k = torch.nn.Parameter(init_tensor((1,), float(self.config.lens_k_limit)))
+        self.mobius_params = torch.nn.Parameter(init_tensor((4,), float(self.config.mobius_limit)))
+        self.laplacian_raw = torch.nn.Parameter(
+            init_tensor((1, 2, self.config.laplacian_size, self.config.laplacian_size), self.laplacian_limit_px)
+        )
+        self.geodesic_params = torch.nn.Parameter(init_tensor((4,), self.geodesic_limit_px))
+        self.differential_surface_height = torch.nn.Parameter(
+            init_tensor(
+                (1, 1, self.config.differential_surface_size, self.config.differential_surface_size),
+                float(self.config.differential_surface_height_limit),
+            )
+        )
         self.dct_image = DCTImagePerturbation(
             channels=channels,
             block_size=self.config.dct_block_size,
@@ -220,18 +376,16 @@ class CombinedFacePerturbation(torch.nn.Module):
             device=device,
         )
 
-        tps_mask = torch.ones_like(self.tps_raw)
-        tps_mask[:, :, 0] = 0
-        tps_mask[:, :, -1] = 0
-        tps_mask[:, :, :, 0] = 0
-        tps_mask[:, :, :, -1] = 0
+        tps_mask = _control_boundary_mask(tuple(self.tps_raw.shape), device)
         self.register_buffer("tps_mask", tps_mask)
-        delaunay_mask = torch.ones_like(self.delaunay_raw)
-        delaunay_mask[:, :, 0] = 0
-        delaunay_mask[:, :, -1] = 0
-        delaunay_mask[:, :, :, 0] = 0
-        delaunay_mask[:, :, :, -1] = 0
+        delaunay_mask = _control_boundary_mask(tuple(self.delaunay_raw.shape), device)
         self.register_buffer("delaunay_mask", delaunay_mask)
+        self.register_buffer("bspline_mask", _control_boundary_mask(tuple(self.bspline_raw.shape), device))
+        self.register_buffer("laplacian_mask", _control_boundary_mask(tuple(self.laplacian_raw.shape), device))
+        self.register_buffer(
+            "differential_surface_mask",
+            _control_boundary_mask(tuple(self.differential_surface_height.shape), device),
+        )
 
         fft_init = 0.0 if self.config.init == "neutral" else 0.05 * torch.pi
         self.fft_phase = FFTPhasePerturbation(
@@ -245,6 +399,14 @@ class CombinedFacePerturbation(torch.nn.Module):
         self.tps_raw.requires_grad_(self.config.tps_enabled)
         self.delaunay_raw.requires_grad_(self.config.delaunay_enabled)
         self.roll_params.requires_grad_(self.config.rolling_enabled)
+        self.polar_params.requires_grad_(self.config.polar_enabled)
+        self.bspline_raw.requires_grad_(self.config.bspline_enabled)
+        self.lens_barrel_k.requires_grad_(self.config.lens_barrel_enabled)
+        self.lens_pincushion_k.requires_grad_(self.config.lens_pincushion_enabled)
+        self.mobius_params.requires_grad_(self.config.mobius_enabled)
+        self.laplacian_raw.requires_grad_(self.config.laplacian_enabled)
+        self.geodesic_params.requires_grad_(self.config.geodesic_enabled)
+        self.differential_surface_height.requires_grad_(self.config.differential_surface_enabled)
         self.fft_phase.raw_phase.requires_grad_(self.config.fft_phase_enabled)
         self.project_()
 
@@ -272,11 +434,169 @@ class CombinedFacePerturbation(torch.nn.Module):
         params = self.roll_params.clamp(-self.rolling_limit_px, self.rolling_limit_px)
         return rolling_field(self.yy, params[0], params[1])
 
+    def _polar_field(self) -> torch.Tensor:
+        """Polar radial/twist perturbation in image coordinates."""
+
+        if not self.config.polar_enabled:
+            return self._zero_field()
+        radial_px = self.polar_params[0].clamp(-self.polar_radial_limit_px, self.polar_radial_limit_px)
+        twist = self.polar_params[1].clamp(-float(self.config.polar_twist_limit_rad), float(self.config.polar_twist_limit_rad))
+        r = self.rr_norm.clamp(0, math.sqrt(2.0))
+        radial = radial_px * r.square()
+        radial_field = torch.stack([radial * self.unit_x, radial * self.unit_y], dim=0)[None]
+
+        angle = twist * r.square()
+        cos_a = torch.cos(angle)
+        sin_a = torch.sin(angle)
+        x_rot = self.xx_norm * cos_a - self.yy_norm * sin_a
+        y_rot = self.xx_norm * sin_a + self.yy_norm * cos_a
+        twist_field = _pixel_field_from_normalized_delta(
+            x_rot - self.xx_norm,
+            y_rot - self.yy_norm,
+            self.height,
+            self.width,
+        )
+        return radial_field + twist_field
+
+    def _bspline_field(self) -> torch.Tensor:
+        """B-spline/Bezier-style free-form control-grid displacement."""
+
+        if not self.config.bspline_enabled:
+            return self._zero_field()
+        controls = self.bspline_raw.clamp(-self.bspline_limit_px, self.bspline_limit_px) * self.bspline_mask
+        return _cap_field(_upsample_control_field(controls, self.height, self.width), self.bspline_limit_px)
+
+    def _lens_field(self, parameter: torch.Tensor, sign: float, enabled: bool) -> torch.Tensor:
+        if not enabled:
+            return self._zero_field()
+        k = parameter[0].clamp(-float(self.config.lens_k_limit), float(self.config.lens_k_limit)) * float(sign)
+        x = self.xx_norm
+        y = self.yy_norm
+        r2 = x.square() + y.square()
+        factor = 1.0 + k * r2
+        return _pixel_field_from_normalized_delta(
+            x * factor - x,
+            y * factor - y,
+            self.height,
+            self.width,
+        )
+
+    def _lens_barrel_field(self) -> torch.Tensor:
+        return self._lens_field(self.lens_barrel_k, 1.0, self.config.lens_barrel_enabled)
+
+    def _lens_pincushion_field(self) -> torch.Tensor:
+        return self._lens_field(self.lens_pincushion_k, -1.0, self.config.lens_pincushion_enabled)
+
+    def _mobius_field(self) -> torch.Tensor:
+        """Small complex-plane Möbius/homography-like warp.
+
+        Uses z' = (z + b) / (c z + 1), with trainable complex b and c. The
+        identity is b=c=0. Limits are intentionally small to avoid denominator
+        singularities in image coordinates.
+        """
+
+        if not self.config.mobius_enabled:
+            return self._zero_field()
+        params = self.mobius_params.clamp(-float(self.config.mobius_limit), float(self.config.mobius_limit))
+        b = torch.complex(params[0], params[1])
+        c = torch.complex(params[2], params[3])
+        z = torch.complex(self.xx_norm.float(), self.yy_norm.float())
+        denom = c * z + torch.ones((), device=z.device, dtype=z.dtype)
+        denom_abs = denom.abs().clamp_min(0.25)
+        denom = denom / denom.abs().clamp_min(1e-6) * denom_abs
+        z2 = (z + b) / denom
+        return _pixel_field_from_normalized_delta(
+            z2.real - self.xx_norm,
+            z2.imag - self.yy_norm,
+            self.height,
+            self.width,
+        ).to(dtype=self.base_grid.dtype)
+
+    def _laplacian_field(self) -> torch.Tensor:
+        """Laplacian-smoothed displacement component.
+
+        Laplacian smoothing is a mesh/field regularization operation rather
+        than a unique image warp. Here it is implemented as a trainable coarse
+        displacement field repeatedly diffused with a discrete Laplacian-like
+        neighbor average.
+        """
+
+        if not self.config.laplacian_enabled:
+            return self._zero_field()
+        field = self.laplacian_raw.clamp(-self.laplacian_limit_px, self.laplacian_limit_px) * self.laplacian_mask
+        field = _upsample_control_field(field, self.height, self.width)
+        alpha = float(self.config.laplacian_smoothing_alpha)
+        alpha = max(0.0, min(alpha, 1.0))
+        for _ in range(max(0, int(self.config.laplacian_smoothing_steps))):
+            neighbor = F.avg_pool2d(field, kernel_size=3, stride=1, padding=1)
+            field = (1.0 - alpha) * field + alpha * neighbor
+        return _cap_field(field, self.laplacian_limit_px)
+
+    def _geodesic_field(self) -> torch.Tensor:
+        """2D geodesic-inspired face deformation surrogate.
+
+        The referenced 3D face work uses actual facial surfaces/range data. For
+        RGB-only FACE3 runs, this component uses an elliptical face metric and
+        radial/tangential coordinate flow as a practical image-plane surrogate.
+        """
+
+        if not self.config.geodesic_enabled:
+            return self._zero_field()
+        params = self.geodesic_params.clamp(-self.geodesic_limit_px, self.geodesic_limit_px)
+        x = self.xx_norm
+        y = self.yy_norm + 0.04
+        rx = 0.62
+        ry = 0.78
+        rho = torch.sqrt((x / rx).square() + (y / ry).square()).clamp_min(1e-6)
+        ux = (x / (rx * rx)) / rho
+        uy = (y / (ry * ry)) / rho
+        tangent_x = -uy
+        tangent_y = ux
+        ring = torch.exp(-((rho - 0.72) / 0.34).square())
+        center = torch.exp(-(rho / 0.85).square())
+        radial = params[0] * ring + params[2] * center
+        tangential = params[1] * ring + params[3] * center
+        field = torch.stack(
+            [radial * ux + tangential * tangent_x, radial * uy + tangential * tangent_y],
+            dim=0,
+        )[None]
+        return _cap_field(field * self.ellipse_mask, self.geodesic_limit_px)
+
+    def _differential_surface_field(self) -> torch.Tensor:
+        """Differential-geometry-inspired surface-gradient coordinate warp.
+
+        A scalar height patch h(x,y) is treated as a simple Monge surface; the
+        image-plane displacement is proportional to its gradient. This is a 2D
+        differentiable surrogate, not a full 3D surface reconstruction.
+        """
+
+        if not self.config.differential_surface_enabled:
+            return self._zero_field()
+        h = self.differential_surface_height.clamp(
+            -float(self.config.differential_surface_height_limit),
+            float(self.config.differential_surface_height_limit),
+        )
+        h = h * self.differential_surface_mask
+        height = F.interpolate(h, size=(self.height, self.width), mode="bicubic", align_corners=True)
+        dx = F.pad((height[:, :, :, 2:] - height[:, :, :, :-2]) / 2.0, (1, 1))
+        dy = F.pad((height[:, :, 2:] - height[:, :, :-2]) / 2.0, (0, 0, 1, 1))
+        field = torch.cat([dx, dy], dim=1) * float(self.config.differential_surface_px_scale) * float(max(self.height, self.width))
+        cap = float(self.config.differential_surface_height_limit) * float(max(self.height, self.width))
+        return _cap_field(field, cap)
+
     def spatial_fields(self) -> dict[str, torch.Tensor]:
         return {
             "tps": self._tps_field() * self.edge,
             "delaunay": self._delaunay_field() * self.edge,
             "rolling": self._rolling_field() * self.edge,
+            "polar": self._polar_field() * self.edge,
+            "bspline": self._bspline_field() * self.edge,
+            "lens_barrel": self._lens_barrel_field() * self.edge,
+            "lens_pincushion": self._lens_pincushion_field() * self.edge,
+            "mobius": self._mobius_field() * self.edge,
+            "laplacian": self._laplacian_field() * self.edge,
+            "geodesic": self._geodesic_field() * self.edge,
+            "differential_surface": self._differential_surface_field() * self.edge,
         }
 
     def spatial_warp(self, image: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
@@ -342,6 +662,14 @@ class CombinedFacePerturbation(torch.nn.Module):
             "tps_grad_norm": norm([self.tps_raw]),
             "delaunay_grad_norm": norm([self.delaunay_raw]),
             "rolling_grad_norm": norm([self.roll_params]),
+            "polar_grad_norm": norm([self.polar_params]),
+            "bspline_grad_norm": norm([self.bspline_raw]),
+            "lens_barrel_grad_norm": norm([self.lens_barrel_k]),
+            "lens_pincushion_grad_norm": norm([self.lens_pincushion_k]),
+            "mobius_grad_norm": norm([self.mobius_params]),
+            "laplacian_grad_norm": norm([self.laplacian_raw]),
+            "geodesic_grad_norm": norm([self.geodesic_params]),
+            "differential_surface_grad_norm": norm([self.differential_surface_height]),
             "dct_gain_grad_norm": norm([self.dct_image.dct_gain_raw]),
             "fft_phase_grad_norm": norm([self.fft_phase.raw_phase]),
             "total_grad_norm": norm(list(self.parameters())),
@@ -362,6 +690,21 @@ class CombinedFacePerturbation(torch.nn.Module):
         stats.update(self._param_stats(self.tps_raw, self.tps_limit_px, "tps"))
         stats.update(self._param_stats(self.delaunay_raw, self.delaunay_limit_px, "delaunay"))
         stats.update(self._param_stats(self.roll_params, self.rolling_limit_px, "rolling"))
+        stats.update(self._param_stats(self.polar_params[:1], self.polar_radial_limit_px, "polar_radial"))
+        stats.update(self._param_stats(self.polar_params[1:], float(self.config.polar_twist_limit_rad), "polar_twist"))
+        stats.update(self._param_stats(self.bspline_raw, self.bspline_limit_px, "bspline"))
+        stats.update(self._param_stats(self.lens_barrel_k, float(self.config.lens_k_limit), "lens_barrel"))
+        stats.update(self._param_stats(self.lens_pincushion_k, float(self.config.lens_k_limit), "lens_pincushion"))
+        stats.update(self._param_stats(self.mobius_params, float(self.config.mobius_limit), "mobius"))
+        stats.update(self._param_stats(self.laplacian_raw, self.laplacian_limit_px, "laplacian"))
+        stats.update(self._param_stats(self.geodesic_params, self.geodesic_limit_px, "geodesic"))
+        stats.update(
+            self._param_stats(
+                self.differential_surface_height,
+                float(self.config.differential_surface_height_limit),
+                "differential_surface",
+            )
+        )
         stats.update(self.dct_image.parameter_diagnostics())
         phase = self.fft_phase.raw_phase.detach().float()
         phase_limit = float(self.config.fft_phase_limit_rad)
@@ -374,6 +717,14 @@ class CombinedFacePerturbation(torch.nn.Module):
                 "rolling_enabled": int(self.config.rolling_enabled),
                 "dct_enabled": int(self.config.dct_enabled),
                 "fft_phase_enabled": int(self.config.fft_phase_enabled),
+                "polar_enabled": int(self.config.polar_enabled),
+                "bspline_enabled": int(self.config.bspline_enabled),
+                "lens_barrel_enabled": int(self.config.lens_barrel_enabled),
+                "lens_pincushion_enabled": int(self.config.lens_pincushion_enabled),
+                "mobius_enabled": int(self.config.mobius_enabled),
+                "laplacian_enabled": int(self.config.laplacian_enabled),
+                "geodesic_enabled": int(self.config.geodesic_enabled),
+                "differential_surface_enabled": int(self.config.differential_surface_enabled),
             }
         )
         return stats
@@ -397,6 +748,14 @@ class CombinedFacePerturbation(torch.nn.Module):
             "theta": {
                 "tps_raw": self.tps_raw.detach().cpu().clone(),
                 "delaunay_raw": self.delaunay_raw.detach().cpu().clone(),
+                "polar_params": self.polar_params.detach().cpu().clone(),
+                "bspline_raw": self.bspline_raw.detach().cpu().clone(),
+                "lens_barrel_k": self.lens_barrel_k.detach().cpu().clone(),
+                "lens_pincushion_k": self.lens_pincushion_k.detach().cpu().clone(),
+                "mobius_params": self.mobius_params.detach().cpu().clone(),
+                "laplacian_raw": self.laplacian_raw.detach().cpu().clone(),
+                "geodesic_params": self.geodesic_params.detach().cpu().clone(),
+                "differential_surface_height": self.differential_surface_height.detach().cpu().clone(),
                 "dct_gain_raw": self.dct_image.dct_gain_raw.detach().cpu().clone(),
                 "roll_params": self.roll_params.detach().cpu().clone(),
                 "fft_phase_raw_phase": self.fft_phase.raw_phase.detach().cpu().clone(),
@@ -410,12 +769,43 @@ class CombinedFacePerturbation(torch.nn.Module):
                 ("tps", self.tps_raw, self.tps_limit_px, self.config.tps_enabled),
                 ("delaunay", self.delaunay_raw, self.delaunay_limit_px, self.config.delaunay_enabled),
                 ("rolling", self.roll_params, self.rolling_limit_px, self.config.rolling_enabled),
+                ("bspline", self.bspline_raw, self.bspline_limit_px, self.config.bspline_enabled),
+                ("lens_barrel", self.lens_barrel_k, float(self.config.lens_k_limit), self.config.lens_barrel_enabled),
+                ("lens_pincushion", self.lens_pincushion_k, float(self.config.lens_k_limit), self.config.lens_pincushion_enabled),
+                ("mobius", self.mobius_params, float(self.config.mobius_limit), self.config.mobius_enabled),
+                ("laplacian", self.laplacian_raw, self.laplacian_limit_px, self.config.laplacian_enabled),
+                ("geodesic", self.geodesic_params, self.geodesic_limit_px, self.config.geodesic_enabled),
+                (
+                    "differential_surface",
+                    self.differential_surface_height,
+                    float(self.config.differential_surface_height_limit),
+                    self.config.differential_surface_enabled,
+                ),
             ]
             total_params = 0
             total_clamped = 0
             total_at_min = 0
             total_at_max = 0
             components = []
+            self.polar_params.nan_to_num_(0.0)
+            if self.config.polar_enabled:
+                polar_limits = torch.tensor(
+                    [self.polar_radial_limit_px, float(self.config.polar_twist_limit_rad)],
+                    device=self.polar_params.device,
+                    dtype=self.polar_params.dtype,
+                )
+                before = (self.polar_params < -polar_limits) | (self.polar_params > polar_limits)
+                total_clamped += int(before.sum().item())
+                self.polar_params.copy_(torch.maximum(torch.minimum(self.polar_params, polar_limits), -polar_limits))
+                at_min = int((self.polar_params <= -polar_limits + 1e-8).sum().item())
+                at_max = int((self.polar_params >= polar_limits - 1e-8).sum().item())
+                total_at_min += at_min
+                total_at_max += at_max
+                total_params += self.polar_params.numel()
+                if at_min or at_max:
+                    components.append("polar")
+            else:
+                self.polar_params.zero_()
             for name, parameter, limit, enabled in blocks:
                 parameter.nan_to_num_(0.0)
                 if not enabled:
@@ -432,6 +822,12 @@ class CombinedFacePerturbation(torch.nn.Module):
                 total_params += parameter.numel()
                 if at_min or at_max:
                     components.append(name)
+            if self.config.bspline_enabled:
+                self.bspline_raw.mul_(self.bspline_mask)
+            if self.config.laplacian_enabled:
+                self.laplacian_raw.mul_(self.laplacian_mask)
+            if self.config.differential_surface_enabled:
+                self.differential_surface_height.mul_(self.differential_surface_mask)
             dct_projection = self.dct_image.project_()
             if self.config.dct_enabled:
                 dct_params = int(self.dct_image.frequency_mask.sum().item())
@@ -476,12 +872,33 @@ class CombinedFacePerturbation(torch.nn.Module):
             "rolling_enabled": bool(self.config.rolling_enabled),
             "dct_enabled": bool(self.config.dct_enabled),
             "fft_phase_enabled": bool(self.config.fft_phase_enabled),
+            "polar_enabled": bool(self.config.polar_enabled),
+            "bspline_enabled": bool(self.config.bspline_enabled),
+            "lens_barrel_enabled": bool(self.config.lens_barrel_enabled),
+            "lens_pincushion_enabled": bool(self.config.lens_pincushion_enabled),
+            "mobius_enabled": bool(self.config.mobius_enabled),
+            "laplacian_enabled": bool(self.config.laplacian_enabled),
+            "geodesic_enabled": bool(self.config.geodesic_enabled),
+            "differential_surface_enabled": bool(self.config.differential_surface_enabled),
             "tps_limit_px": self.tps_limit_px,
             "delaunay_limit_px": self.delaunay_limit_px,
             "rolling_limit_px": self.rolling_limit_px,
+            "polar_radial_limit_px": self.polar_radial_limit_px,
+            "polar_twist_limit_rad": float(self.config.polar_twist_limit_rad),
+            "bspline_limit_px": self.bspline_limit_px,
+            "lens_k_limit": float(self.config.lens_k_limit),
+            "mobius_limit": float(self.config.mobius_limit),
+            "laplacian_limit_px": self.laplacian_limit_px,
+            "geodesic_limit_px": self.geodesic_limit_px,
+            "differential_surface_height_limit": float(self.config.differential_surface_height_limit),
+            "differential_surface_px_scale": float(self.config.differential_surface_px_scale),
             "tps_norm_limit": self.config.tps_norm_limit,
             "delaunay_norm_limit": self.config.delaunay_norm_limit,
             "rolling_norm_limit": self.config.rolling_norm_limit,
+            "polar_radial_norm_limit": self.config.polar_radial_norm_limit,
+            "bspline_norm_limit": self.config.bspline_norm_limit,
+            "laplacian_norm_limit": self.config.laplacian_norm_limit,
+            "geodesic_norm_limit": self.config.geodesic_norm_limit,
             "dct_mode": "block_frequency_gain",
             "dct_block_size": self.config.dct_block_size,
             "dct_gain_limit": self.config.dct_gain_limit,
