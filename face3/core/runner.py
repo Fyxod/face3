@@ -5,6 +5,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+import shutil
 
 import numpy as np
 from PIL import Image
@@ -41,6 +42,8 @@ class RunConfig:
     image_guidance_scale: float = 1.5
     edit_eta: float = 0.0
     enable_editor_gradient_checkpointing: bool = True
+    resume_run_root: str | None = None
+    resume_latest: bool = False
 
 
 REQUIRED_HISTORY_FIELDS = {
@@ -158,6 +161,34 @@ REQUIRED_HISTORY_FIELDS = {
 
 def _run_dir(root: Path, spec: RunSpec) -> Path:
     return root / "runs" / "edited_output_identity" / spec.model / spec.case.slug
+
+
+def _latest_run_root(output_root: Path) -> Path:
+    candidates = [
+        path
+        for path in output_root.iterdir()
+        if path.is_dir() and (path / "runs" / "edited_output_identity").exists()
+    ] if output_root.exists() else []
+    if not candidates:
+        raise FileNotFoundError(f"No resumable FACE3 run roots found under {output_root}")
+    return sorted(candidates, key=lambda path: path.name)[-1]
+
+
+def _archive_incomplete_case_dir(run_dir: Path) -> None:
+    if not run_dir.exists() or (run_dir / "DONE.json").exists():
+        return
+    if not any(run_dir.iterdir()):
+        return
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    archive_root = run_dir.parent / "_incomplete_case_archives"
+    archive_root.mkdir(parents=True, exist_ok=True)
+    archive = archive_root / f"{run_dir.name}_{stamp}"
+    counter = 1
+    while archive.exists():
+        archive = archive_root / f"{run_dir.name}_{stamp}_{counter:02d}"
+        counter += 1
+    print(f"[face3] archiving incomplete case before rerun: {run_dir} -> {archive}")
+    shutil.move(str(run_dir), str(archive))
 
 
 def _float_terms(terms: dict[str, Any]) -> dict[str, float]:
@@ -753,9 +784,16 @@ def _write_top_summary(run_root: Path, cfg: RunConfig, started: float, summaries
 
 def run_matrix(cfg: RunConfig) -> dict[str, Any]:
     started = time.monotonic()
-    run_id = time.strftime("%Y%m%d_%H%M%S")
     label = "quick" if cfg.quick else "all"
-    root = Path(cfg.output_root) / f"{run_id}_edited_output_identity_{label}_sequential"
+    if cfg.resume_run_root:
+        root = Path(cfg.resume_run_root)
+        print(f"[face3] resuming explicit run root: {root}")
+    elif cfg.resume_latest:
+        root = _latest_run_root(Path(cfg.output_root))
+        print(f"[face3] resuming latest run root under {cfg.output_root}: {root}")
+    else:
+        run_id = time.strftime("%Y%m%d_%H%M%S")
+        root = Path(cfg.output_root) / f"{run_id}_edited_output_identity_{label}_sequential"
     root.mkdir(parents=True, exist_ok=True)
     write_json(root / "launcher_config.json", asdict(cfg))
     print_resolved_cases(Path(cfg.mat_root))
@@ -770,6 +808,8 @@ def run_matrix(cfg: RunConfig) -> dict[str, Any]:
     for spec in specs:
         run_dir = _run_dir(root, spec)
         try:
+            if (cfg.resume_run_root or cfg.resume_latest) and run_dir.exists() and not (run_dir / "DONE.json").exists():
+                _archive_incomplete_case_dir(run_dir)
             summaries.append(optimize_one(spec, cfg, arcface, editor, device, run_dir))
         except Exception as error:
             failures.append({"spec": spec.slug, "error": repr(error), "run_dir": str(run_dir)})

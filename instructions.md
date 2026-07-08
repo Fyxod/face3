@@ -221,6 +221,51 @@ $HOME/.local/bin/micromamba run \
 
 If that is stable and the ETA is acceptable, increase `--iters` and/or `--edit-steps`.
 
+## 5c. Resume a killed matrix run by completed case
+
+The normal command creates a new timestamped run folder, so rerunning the exact
+same command does **not** continue the old folder. To continue a killed run,
+resume the specific timestamped run root.
+
+Resume behavior:
+
+- cases with `DONE.json` are skipped
+- an incomplete/killed case folder is archived under `_incomplete_case_archives/`
+- the incomplete case is rerun from the beginning
+- later cases continue normally
+
+Mid-case checkpoint resume is not exact because FACE3 does not save optimizer
+state or geometry tensor checkpoints by default. This is intentional to avoid
+pushing `.pt` files. The supported resume mode is therefore case-level resume.
+
+For your killed run4:
+
+```bash
+cd /home/interns/Desktop/face3
+mkdir -p logs
+
+$HOME/.local/bin/micromamba run \
+  -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000 \
+  python -m face3.scripts.run_matrix \
+  --mat-root /home/interns/Desktop/mat \
+  --arcface-checkpoint /home/interns/Desktop/face3/models/arcface/iresnet100.pth \
+  --iters 200 \
+  --edit-steps 20 \
+  --output-root outputs/edited_output_identity_4 \
+  --resume-run-root outputs/edited_output_identity_4/20260708_100243_edited_output_identity_all_sequential \
+  --geometry-config configs/geometry_default.json \
+  --init small_random \
+  --skip-deepface \
+  2>&1 | tee -a logs/face3_edited_output_identity_4_resume.log
+```
+
+If you only want to resume the newest timestamped folder under an output root,
+use:
+
+```bash
+--resume-latest
+```
+
 ## 6. Summarize / report
 
 ```bash

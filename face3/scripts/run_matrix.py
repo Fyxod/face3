@@ -22,6 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--enable-editor-gradient-checkpointing", dest="enable_editor_gradient_checkpointing", action="store_true", default=None)
     parser.add_argument("--disable-editor-gradient-checkpointing", dest="enable_editor_gradient_checkpointing", action="store_false")
     parser.add_argument("--init", choices=["neutral", "small_random"], default=None)
+    parser.add_argument("--resume-run-root", default=None, help="Resume a specific timestamped run root; skips DONE cases and archives incomplete cases before rerun.")
+    parser.add_argument("--resume-latest", action="store_true", help="Resume the latest timestamped run under --output-root.")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--skip-deepface", action="store_true")
     return parser.parse_args()
@@ -48,6 +50,8 @@ def main() -> None:
         guidance_scale=args.guidance_scale,
         image_guidance_scale=args.image_guidance_scale,
         enable_editor_gradient_checkpointing=True if args.enable_editor_gradient_checkpointing is None else args.enable_editor_gradient_checkpointing,
+        resume_run_root=args.resume_run_root,
+        resume_latest=args.resume_latest,
     )
     summary = run_matrix(cfg)
     print(f"[face3-run] wrote: {summary['output_root']}")
