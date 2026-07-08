@@ -24,7 +24,7 @@ class RunConfig:
     output_root: str
     geometry_config_path: str = "configs/geometry_default.json"
     iters: int = 150
-    lr: float = 0.05
+    lr: float = 0.1
     seed: int = 1234
     init: str | None = None
     quick: bool = False

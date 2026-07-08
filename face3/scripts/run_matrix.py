@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--geometry-config", default="configs/geometry_default.json")
     parser.add_argument("--output-root", default="outputs/edited_output_identity_dct_image")
     parser.add_argument("--iters", type=int, default=150)
-    parser.add_argument("--lr", type=float, default=0.05)
+    parser.add_argument("--lr", type=float, default=0.1)
     parser.add_argument("--edit-steps", type=int, default=4, help="Differentiable InstructPix2Pix denoising steps inside each optimization iteration.")
     parser.add_argument("--guidance-scale", type=float, default=7.5)
     parser.add_argument("--image-guidance-scale", type=float, default=1.5)
