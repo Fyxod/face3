@@ -56,8 +56,8 @@
       "px_limit": null
     },
     "lens_barrel": {
-      "enabled": true,
-      "k_limit": 0.03
+      "enabled": false,
+      "k_limit": 0
     },
     "lens_pincushion": {
       "enabled": false,
@@ -69,7 +69,7 @@
     },
     "laplacian": {
       "enabled": false,
-      "size": 10,
+      "size": 7,
       "norm_limit": 0.02,
       "px_limit": null,
       "smoothing_steps": 8,
