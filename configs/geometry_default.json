@@ -56,7 +56,7 @@
       "px_limit": null
     },
     "lens_barrel": {
-      "enabled": true,
+      "enabled": false,
       "k_limit": 0.03
     },
     "lens_pincushion": {
@@ -76,14 +76,14 @@
       "smoothing_alpha": 0.35
     },
     "geodesic": {
-      "enabled": false,
-      "norm_limit": 0.03,
+      "enabled": true,
+      "norm_limit": 0.003,
       "px_limit": null
     },
     "differential_surface": {
       "enabled": false,
       "size": 7,
-      "height_limit": 0.04,
+      "height_limit": 0.12,
       "px_scale": 12.0
     }
   }
