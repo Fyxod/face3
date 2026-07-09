@@ -488,13 +488,14 @@ class CombinedFacePerturbation(torch.nn.Module):
         )
 
     def _lens_barrel_field(self) -> torch.Tensor:
-        # grid_sample uses inverse mapping. Barrel-looking output is produced
-        # by sampling from a smaller source radius near the output edges.
-        return self._lens_field(self.lens_barrel_k, -1.0, self.config.lens_barrel_enabled)
+        # grid_sample uses inverse mapping. With the bounded radial map in
+        # _lens_field, positive k produces the visible barrel pattern: grid
+        # lines bulge outward from the center.
+        return self._lens_field(self.lens_barrel_k, 1.0, self.config.lens_barrel_enabled)
 
     def _lens_pincushion_field(self) -> torch.Tensor:
-        # Opposite sign of barrel under the same inverse-map convention.
-        return self._lens_field(self.lens_pincushion_k, 1.0, self.config.lens_pincushion_enabled)
+        # Opposite sign of barrel: grid lines pinch inward toward the center.
+        return self._lens_field(self.lens_pincushion_k, -1.0, self.config.lens_pincushion_enabled)
 
     def _mobius_field(self) -> torch.Tensor:
         """Small complex-plane Möbius/homography-like warp.
