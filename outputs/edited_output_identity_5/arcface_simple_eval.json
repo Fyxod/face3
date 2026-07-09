@@ -1,0 +1,34 @@
+[
+  {
+    "original_vs_original_edit": 0.9900143146514893,
+    "original_vs_perturbed_best": 0.9776499271392822,
+    "original_vs_perturbed_final": 0.9764050841331482,
+    "perturbed_best_vs_perturbed_best_edit": 0.9847681522369385,
+    "perturbed_final_vs_perturbed_final_edit": 0.9859320521354675,
+    "case": "face_002__add_black_sunglasses"
+  },
+  {
+    "original_vs_original_edit": 0.9898096323013306,
+    "original_vs_perturbed_best": 0.9874045848846436,
+    "original_vs_perturbed_final": 0.9816081523895264,
+    "perturbed_best_vs_perturbed_best_edit": 0.9878941774368286,
+    "perturbed_final_vs_perturbed_final_edit": 0.9833976030349731,
+    "case": "face_002__add_headphones"
+  },
+  {
+    "original_vs_original_edit": 0.9886707067489624,
+    "original_vs_perturbed_best": 0.9880583882331848,
+    "original_vs_perturbed_final": 0.9876254796981812,
+    "perturbed_best_vs_perturbed_best_edit": 0.9897412061691284,
+    "perturbed_final_vs_perturbed_final_edit": 0.9902735352516174,
+    "case": "face_005__add_black_sunglasses"
+  },
+  {
+    "original_vs_original_edit": 0.9919403791427612,
+    "original_vs_perturbed_best": 0.9827691316604614,
+    "original_vs_perturbed_final": 0.988385796546936,
+    "perturbed_best_vs_perturbed_best_edit": 0.9906131625175476,
+    "perturbed_final_vs_perturbed_final_edit": 0.9933533072471619,
+    "case": "face_005__add_headphones"
+  }
+]
