@@ -67,6 +67,7 @@ class FaceGeometryConfig:
     fft_phase_limit_rad: float = math.pi
     laplacian_smoothing_steps: int = 8
     laplacian_smoothing_alpha: float = 0.35
+    spatial_padding_mode: str = "reflection"
     max_combined_disp_px: float | None = None
 
 
@@ -473,7 +474,12 @@ class CombinedFacePerturbation(torch.nn.Module):
         x = self.xx_norm
         y = self.yy_norm
         r2 = x.square() + y.square()
-        factor = 1.0 + k * r2
+        # Positive inverse radial coefficients can otherwise request samples
+        # outside the finite source image. Normalize by the corner factor so
+        # the visualization/optimization does not degenerate into padding
+        # streaks while retaining the radial lens curvature.
+        safe_scale = torch.where(k > 0, 1.0 / (1.0 + 2.0 * k), torch.ones_like(k))
+        factor = safe_scale * (1.0 + k * r2)
         return _pixel_field_from_normalized_delta(
             x * factor - x,
             y * factor - y,
@@ -482,10 +488,13 @@ class CombinedFacePerturbation(torch.nn.Module):
         )
 
     def _lens_barrel_field(self) -> torch.Tensor:
-        return self._lens_field(self.lens_barrel_k, 1.0, self.config.lens_barrel_enabled)
+        # grid_sample uses inverse mapping. Barrel-looking output is produced
+        # by sampling from a smaller source radius near the output edges.
+        return self._lens_field(self.lens_barrel_k, -1.0, self.config.lens_barrel_enabled)
 
     def _lens_pincushion_field(self) -> torch.Tensor:
-        return self._lens_field(self.lens_pincushion_k, -1.0, self.config.lens_pincushion_enabled)
+        # Opposite sign of barrel under the same inverse-map convention.
+        return self._lens_field(self.lens_pincushion_k, 1.0, self.config.lens_pincushion_enabled)
 
     def _mobius_field(self) -> torch.Tensor:
         """Small complex-plane Möbius/homography-like warp.
@@ -609,7 +618,10 @@ class CombinedFacePerturbation(torch.nn.Module):
         grid = self.base_grid.clone()
         grid[..., 0] += 2.0 * displacement[:, 0] / max(self.width - 1, 1)
         grid[..., 1] += 2.0 * displacement[:, 1] / max(self.height - 1, 1)
-        warped = F.grid_sample(image, grid, mode="bilinear", padding_mode="reflection", align_corners=True).clamp(0, 1)
+        padding_mode = str(self.config.spatial_padding_mode)
+        if padding_mode not in {"zeros", "border", "reflection"}:
+            padding_mode = "reflection"
+        warped = F.grid_sample(image, grid, mode="bilinear", padding_mode=padding_mode, align_corners=True).clamp(0, 1)
         return warped, displacement, fields
 
     def forward(self, image: torch.Tensor) -> tuple[torch.Tensor, dict[str, Any]]:
@@ -907,5 +919,5 @@ class CombinedFacePerturbation(torch.nn.Module):
             "dct_exclude_dc": self.config.dct_exclude_dc,
             "fft_phase_limit_rad": float(self.config.fft_phase_limit_rad),
             "max_combined_disp_px": self.config.max_combined_disp_px,
+            "spatial_padding_mode": str(self.config.spatial_padding_mode),
         }
-

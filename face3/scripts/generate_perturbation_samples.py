@@ -28,11 +28,11 @@ PERTURBATION_NOTES = {
     },
     "lens_barrel": {
         "title": "Lens barrel distortion",
-        "note": "Implemented as radial lens distortion using a polynomial radius factor. It bends straight structures outward/inward depending on sampling convention and coefficient sign.",
+        "note": "Implemented as inverse-map radial lens distortion using a polynomial radius factor. The positive radial map is normalized to stay inside the finite image so samples do not become reflection/border artifacts.",
     },
     "lens_pincushion": {
         "title": "Lens pincushion distortion",
-        "note": "Implemented with the opposite radial coefficient sign from barrel distortion. It is the complementary radial lens family.",
+        "note": "Implemented with the opposite inverse-map radial sign from barrel distortion. The positive radial map is normalized to stay inside the finite image so samples do not become reflection/border artifacts.",
     },
     "mobius": {
         "title": "Möbius transform",
@@ -105,6 +105,7 @@ def _base_config(**kwargs) -> FaceGeometryConfig:
         differential_surface_enabled=False,
         edge_falloff_px=0.0,
         init="neutral",
+        spatial_padding_mode="border",
     )
     values.update(kwargs)
     return FaceGeometryConfig(**values)
@@ -145,9 +146,9 @@ def _configured_geometry(name: str, level: float, height: int, width: int, devic
     elif name == "bspline_bezier_ffd":
         cfg = _base_config(bspline_enabled=True, bspline_size=7, bspline_px_limit=48.0)
     elif name == "lens_barrel":
-        cfg = _base_config(lens_barrel_enabled=True, lens_k_limit=0.75)
+        cfg = _base_config(lens_barrel_enabled=True, lens_k_limit=0.28)
     elif name == "lens_pincushion":
-        cfg = _base_config(lens_pincushion_enabled=True, lens_k_limit=0.75)
+        cfg = _base_config(lens_pincushion_enabled=True, lens_k_limit=0.28)
     elif name == "mobius":
         cfg = _base_config(mobius_enabled=True, mobius_limit=0.45)
     elif name == "laplacian":
@@ -177,9 +178,9 @@ def _configured_geometry(name: str, level: float, height: int, width: int, devic
         elif name == "bspline_bezier_ffd":
             geo.bspline_raw[:] = _sinusoidal_controls(tuple(geo.bspline_raw.shape), level * 40.0, device)
         elif name == "lens_barrel":
-            geo.lens_barrel_k[:] = level * 0.58
+            geo.lens_barrel_k[:] = level * 0.22
         elif name == "lens_pincushion":
-            geo.lens_pincushion_k[:] = level * 0.58
+            geo.lens_pincushion_k[:] = level * 0.22
         elif name == "mobius":
             geo.mobius_params[:] = torch.tensor([0.08, -0.04, 0.22, -0.18], device=device) * level
         elif name == "laplacian":

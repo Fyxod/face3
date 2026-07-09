@@ -16,11 +16,11 @@ Implemented as a differentiable control-grid free-form deformation. This is the 
 
 ### Lens barrel distortion
 
-Implemented as radial lens distortion using a polynomial radius factor. It bends straight structures outward/inward depending on sampling convention and coefficient sign.
+Implemented as inverse-map radial lens distortion using a polynomial radius factor. The positive radial map is normalized to stay inside the finite image so samples do not become reflection/border artifacts.
 
 ### Lens pincushion distortion
 
-Implemented with the opposite radial coefficient sign from barrel distortion. It is the complementary radial lens family.
+Implemented with the opposite inverse-map radial sign from barrel distortion. The positive radial map is normalized to stay inside the finite image so samples do not become reflection/border artifacts.
 
 ### Möbius transform
 
@@ -66,11 +66,11 @@ Differential geometry of surfaces is a 3D/surface theory, not directly a raster 
     },
     "lens_barrel": {
       "title": "Lens barrel distortion",
-      "note": "Implemented as radial lens distortion using a polynomial radius factor. It bends straight structures outward/inward depending on sampling convention and coefficient sign."
+      "note": "Implemented as inverse-map radial lens distortion using a polynomial radius factor. The positive radial map is normalized to stay inside the finite image so samples do not become reflection/border artifacts."
     },
     "lens_pincushion": {
       "title": "Lens pincushion distortion",
-      "note": "Implemented with the opposite radial coefficient sign from barrel distortion. It is the complementary radial lens family."
+      "note": "Implemented with the opposite inverse-map radial sign from barrel distortion. The positive radial map is normalized to stay inside the finite image so samples do not become reflection/border artifacts."
     },
     "mobius": {
       "title": "M\u00f6bius transform",
