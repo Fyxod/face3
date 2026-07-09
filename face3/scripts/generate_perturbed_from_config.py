@@ -126,6 +126,12 @@ def generate_perturbed_image(
     }
     config_used_path.write_text(json.dumps(config_used, indent=2), encoding="utf-8")
     
+    # Save difference image (perturbed - original)
+    diff_tensor = (perturbed - tensor).abs().clamp(0, 1)
+    diff_pil = tensor_to_pil(diff_tensor)
+    diff_path = output_path.with_name(f"{output_path.stem}_diff.png")
+    diff_pil.save(diff_path)
+    
     return diagnostics
 
 

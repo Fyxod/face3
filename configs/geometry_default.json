@@ -50,14 +50,14 @@
       "twist_limit_rad": 0.05
     },
     "bspline": {
-      "enabled": true,
+      "enabled": false,
       "size": 6,
       "norm_limit": 0.03,
       "px_limit": null
     },
     "lens_barrel": {
-      "enabled": false,
-      "k_limit": 0.35
+      "enabled": true,
+      "k_limit": 0
     },
     "lens_pincushion": {
       "enabled": false,
