@@ -51,6 +51,8 @@ class FaceGeometryConfig:
     polar_twist_limit_rad: float = 0.35
     bspline_norm_limit: float = 0.020
     lens_k_limit: float = 0.35
+    lens_barrel_k_limit: float | None = None
+    lens_pincushion_k_limit: float | None = None
     mobius_limit: float = 0.20
     laplacian_norm_limit: float = 0.020
     geodesic_norm_limit: float = 0.030
@@ -155,7 +157,7 @@ def load_face_geometry_config(path: str | Path | None) -> FaceGeometryConfig:
                 values["bspline_px_limit"] = None if block["px_limit"] is None else float(block["px_limit"])
         elif name in {"lens_barrel", "lens_pincushion"}:
             if "k_limit" in block:
-                values["lens_k_limit"] = float(block["k_limit"])
+                values[f"{prefix}_k_limit"] = float(block["k_limit"])
         elif name == "mobius":
             if "limit" in block:
                 values["mobius_limit"] = float(block["limit"])
@@ -186,7 +188,7 @@ def load_face_geometry_config(path: str | Path | None) -> FaceGeometryConfig:
 
 
 def _field_stats(field: torch.Tensor, prefix: str) -> dict[str, float]:
-    mag = torch.sqrt(field.detach().float().square().sum(dim=1) + 1e-12)
+    mag = torch.sqrt(field.detach().float().square().sum(dim=1))
     return {
         f"{prefix}_mean_disp": float(mag.mean().cpu()),
         f"{prefix}_max_disp": float(mag.max().cpu()),
@@ -195,7 +197,7 @@ def _field_stats(field: torch.Tensor, prefix: str) -> dict[str, float]:
 
 
 def displacement_stats(field: torch.Tensor) -> dict[str, float]:
-    mag = torch.sqrt(field.detach().float().square().sum(dim=1) + 1e-12)
+    mag = torch.sqrt(field.detach().float().square().sum(dim=1))
     return {
         "combined_max_disp_px": float(mag.max().cpu()),
         "combined_mean_disp_px": float(mag.mean().cpu()),
@@ -290,6 +292,16 @@ class CombinedFacePerturbation(torch.nn.Module):
             self.config.laplacian_px_limit, self.config.laplacian_norm_limit, height, width
         )
         self.geodesic_limit_px = _configured_limit_px(self.config.geodesic_px_limit, self.config.geodesic_norm_limit, height, width)
+        self.lens_barrel_k_limit = (
+            float(self.config.lens_barrel_k_limit)
+            if self.config.lens_barrel_k_limit is not None
+            else float(self.config.lens_k_limit)
+        )
+        self.lens_pincushion_k_limit = (
+            float(self.config.lens_pincushion_k_limit)
+            if self.config.lens_pincushion_k_limit is not None
+            else float(self.config.lens_k_limit)
+        )
         self.component_limit_for_flow = max(
             self.tps_limit_px,
             self.delaunay_limit_px,
@@ -354,8 +366,8 @@ class CombinedFacePerturbation(torch.nn.Module):
         self.bspline_raw = torch.nn.Parameter(
             init_tensor((1, 2, self.config.bspline_size, self.config.bspline_size), self.bspline_limit_px)
         )
-        self.lens_barrel_k = torch.nn.Parameter(init_tensor((1,), float(self.config.lens_k_limit)))
-        self.lens_pincushion_k = torch.nn.Parameter(init_tensor((1,), float(self.config.lens_k_limit)))
+        self.lens_barrel_k = torch.nn.Parameter(init_tensor((1,), self.lens_barrel_k_limit))
+        self.lens_pincushion_k = torch.nn.Parameter(init_tensor((1,), self.lens_pincushion_k_limit))
         self.mobius_params = torch.nn.Parameter(init_tensor((4,), float(self.config.mobius_limit)))
         self.laplacian_raw = torch.nn.Parameter(
             init_tensor((1, 2, self.config.laplacian_size, self.config.laplacian_size), self.laplacian_limit_px)
@@ -467,10 +479,12 @@ class CombinedFacePerturbation(torch.nn.Module):
         controls = self.bspline_raw.clamp(-self.bspline_limit_px, self.bspline_limit_px) * self.bspline_mask
         return _cap_field(_upsample_control_field(controls, self.height, self.width), self.bspline_limit_px)
 
-    def _lens_field(self, parameter: torch.Tensor, sign: float, enabled: bool) -> torch.Tensor:
+    def _lens_field(self, parameter: torch.Tensor, limit: float, sign: float, enabled: bool) -> torch.Tensor:
         if not enabled:
             return self._zero_field()
-        k = parameter[0].clamp(-float(self.config.lens_k_limit), float(self.config.lens_k_limit)) * float(sign)
+        if float(limit) <= 0.0:
+            return self._zero_field()
+        k = parameter[0].clamp(-float(limit), float(limit)) * float(sign)
         x = self.xx_norm
         y = self.yy_norm
         r2 = x.square() + y.square()
@@ -491,11 +505,16 @@ class CombinedFacePerturbation(torch.nn.Module):
         # grid_sample uses inverse mapping. With the bounded radial map in
         # _lens_field, positive k produces the visible barrel pattern: grid
         # lines bulge outward from the center.
-        return self._lens_field(self.lens_barrel_k, 1.0, self.config.lens_barrel_enabled)
+        return self._lens_field(self.lens_barrel_k, self.lens_barrel_k_limit, 1.0, self.config.lens_barrel_enabled)
 
     def _lens_pincushion_field(self) -> torch.Tensor:
         # Opposite sign of barrel: grid lines pinch inward toward the center.
-        return self._lens_field(self.lens_pincushion_k, -1.0, self.config.lens_pincushion_enabled)
+        return self._lens_field(
+            self.lens_pincushion_k,
+            self.lens_pincushion_k_limit,
+            -1.0,
+            self.config.lens_pincushion_enabled,
+        )
 
     def _mobius_field(self) -> torch.Tensor:
         """Small complex-plane Möbius/homography-like warp.
@@ -706,8 +725,8 @@ class CombinedFacePerturbation(torch.nn.Module):
         stats.update(self._param_stats(self.polar_params[:1], self.polar_radial_limit_px, "polar_radial"))
         stats.update(self._param_stats(self.polar_params[1:], float(self.config.polar_twist_limit_rad), "polar_twist"))
         stats.update(self._param_stats(self.bspline_raw, self.bspline_limit_px, "bspline"))
-        stats.update(self._param_stats(self.lens_barrel_k, float(self.config.lens_k_limit), "lens_barrel"))
-        stats.update(self._param_stats(self.lens_pincushion_k, float(self.config.lens_k_limit), "lens_pincushion"))
+        stats.update(self._param_stats(self.lens_barrel_k, self.lens_barrel_k_limit, "lens_barrel"))
+        stats.update(self._param_stats(self.lens_pincushion_k, self.lens_pincushion_k_limit, "lens_pincushion"))
         stats.update(self._param_stats(self.mobius_params, float(self.config.mobius_limit), "mobius"))
         stats.update(self._param_stats(self.laplacian_raw, self.laplacian_limit_px, "laplacian"))
         stats.update(self._param_stats(self.geodesic_params, self.geodesic_limit_px, "geodesic"))
@@ -783,8 +802,8 @@ class CombinedFacePerturbation(torch.nn.Module):
                 ("delaunay", self.delaunay_raw, self.delaunay_limit_px, self.config.delaunay_enabled),
                 ("rolling", self.roll_params, self.rolling_limit_px, self.config.rolling_enabled),
                 ("bspline", self.bspline_raw, self.bspline_limit_px, self.config.bspline_enabled),
-                ("lens_barrel", self.lens_barrel_k, float(self.config.lens_k_limit), self.config.lens_barrel_enabled),
-                ("lens_pincushion", self.lens_pincushion_k, float(self.config.lens_k_limit), self.config.lens_pincushion_enabled),
+                ("lens_barrel", self.lens_barrel_k, self.lens_barrel_k_limit, self.config.lens_barrel_enabled),
+                ("lens_pincushion", self.lens_pincushion_k, self.lens_pincushion_k_limit, self.config.lens_pincushion_enabled),
                 ("mobius", self.mobius_params, float(self.config.mobius_limit), self.config.mobius_enabled),
                 ("laplacian", self.laplacian_raw, self.laplacian_limit_px, self.config.laplacian_enabled),
                 ("geodesic", self.geodesic_params, self.geodesic_limit_px, self.config.geodesic_enabled),
@@ -900,6 +919,8 @@ class CombinedFacePerturbation(torch.nn.Module):
             "polar_twist_limit_rad": float(self.config.polar_twist_limit_rad),
             "bspline_limit_px": self.bspline_limit_px,
             "lens_k_limit": float(self.config.lens_k_limit),
+            "lens_barrel_k_limit": self.lens_barrel_k_limit,
+            "lens_pincushion_k_limit": self.lens_pincushion_k_limit,
             "mobius_limit": float(self.config.mobius_limit),
             "laplacian_limit_px": self.laplacian_limit_px,
             "geodesic_limit_px": self.geodesic_limit_px,

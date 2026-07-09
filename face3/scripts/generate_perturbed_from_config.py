@@ -46,11 +46,11 @@ def _maximize_parameters(geo: CombinedFacePerturbation, config: FaceGeometryConf
         
         # Lens barrel
         if config.lens_barrel_enabled:
-            geo.lens_barrel_k[:] = float(config.lens_k_limit)
+            geo.lens_barrel_k[:] = float(geo.lens_barrel_k_limit)
         
         # Lens pincushion
         if config.lens_pincushion_enabled:
-            geo.lens_pincushion_k[:] = float(config.lens_k_limit)
+            geo.lens_pincushion_k[:] = float(geo.lens_pincushion_k_limit)
         
         # Mobius
         if config.mobius_enabled:
