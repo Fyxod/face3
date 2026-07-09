@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from face3.core.geometry.combined_face import CombinedFacePerturbation, FaceGeometryConfig
 from face3.core.image_metrics import flow_to_pil, pil_to_tensor, save_sheet, tensor_to_pil
@@ -40,7 +40,7 @@ PERTURBATION_NOTES = {
     },
     "laplacian": {
         "title": "Laplacian-smoothed deformation",
-        "note": "Laplacian smoothing itself is a mesh/field regularizer, not a unique warp. Here it is implemented as a trainable low-resolution displacement field repeatedly diffused by a discrete Laplacian-like neighbor average.",
+        "note": "Laplacian smoothing itself is a mesh/field regularizer, not a unique warp. Here it is implemented as sparse handle/control displacements on a low-resolution grid, repeatedly diffused by a discrete Laplacian-like neighbor average before interpolation.",
     },
     "geodesic": {
         "title": "Geodesic-inspired deformation",
@@ -124,6 +124,26 @@ def _sinusoidal_controls(shape: tuple[int, ...], limit: float, device: torch.dev
     return control[:, :channels] * float(limit)
 
 
+def _laplacian_handle_controls(shape: tuple[int, ...], limit: float, device: torch.device) -> torch.Tensor:
+    """Sparse handle-style control displacements for Laplacian samples."""
+
+    _, channels, height, width = shape
+    controls = torch.zeros(1, channels, height, width, device=device)
+    handles = [
+        (height // 3, width // 3, 0.85, -0.55),
+        (height // 3, 2 * width // 3, -0.65, 0.35),
+        (2 * height // 3, width // 2, 0.45, 0.90),
+        (height // 2, width // 4, -0.35, 0.45),
+    ]
+    for row, col, dx, dy in handles:
+        row = max(1, min(height - 2, int(row)))
+        col = max(1, min(width - 2, int(col)))
+        controls[0, 0, row, col] = float(dx) * float(limit)
+        if channels > 1:
+            controls[0, 1, row, col] = float(dy) * float(limit)
+    return controls
+
+
 def _surface_controls(shape: tuple[int, ...], limit: float, device: torch.device) -> torch.Tensor:
     _, _, height, width = shape
     yy, xx = torch.meshgrid(
@@ -154,10 +174,10 @@ def _configured_geometry(name: str, level: float, height: int, width: int, devic
     elif name == "laplacian":
         cfg = _base_config(
             laplacian_enabled=True,
-            laplacian_size=8,
-            laplacian_px_limit=48.0,
-            laplacian_smoothing_steps=14,
-            laplacian_smoothing_alpha=0.45,
+            laplacian_size=11,
+            laplacian_px_limit=72.0,
+            laplacian_smoothing_steps=10,
+            laplacian_smoothing_alpha=0.55,
         )
     elif name == "geodesic":
         cfg = _base_config(geodesic_enabled=True, geodesic_px_limit=56.0)
@@ -184,7 +204,7 @@ def _configured_geometry(name: str, level: float, height: int, width: int, devic
         elif name == "mobius":
             geo.mobius_params[:] = torch.tensor([0.08, -0.04, 0.22, -0.18], device=device) * level
         elif name == "laplacian":
-            geo.laplacian_raw[:] = _sinusoidal_controls(tuple(geo.laplacian_raw.shape), level * 44.0, device)
+            geo.laplacian_raw[:] = _laplacian_handle_controls(tuple(geo.laplacian_raw.shape), level * 72.0, device)
         elif name == "geodesic":
             geo.geodesic_params[:] = torch.tensor([34.0, 18.0, -20.0, 12.0], device=device) * level
         elif name == "differential_surface":
@@ -228,13 +248,35 @@ def _write_notes(output_root: Path, metadata: dict) -> None:
             "- Lens barrel and pincushion use radial camera-distortion style coordinate factors.",
             "- The B-spline/Bezier-style implementation uses a free-form deformation control grid, the practical raster-image analogue of perturbing spline control parameters.",
             "- Möbius uses the complex linear-fractional form `(a z + b) / (c z + d)`, restricted near identity for stability.",
-            "- Laplacian smoothing is treated as displacement-field diffusion because Laplacian methods are normally mesh/field editing tools.",
+            "- Laplacian smoothing is treated as sparse-handle displacement diffusion because Laplacian methods are normally mesh/field editing tools, not a standalone image-plane warp.",
             "- Geodesic and differential-surface items require actual 3D/surface data for literal implementations, so FACE3 provides RGB image-plane surrogates.",
             "",
         ]
     )
     lines.extend(["## Generated inputs", "", "```json", json.dumps(metadata, indent=2), "```", ""])
     (output_root / "README.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_lens_grid_check(output_root: Path, device: torch.device) -> None:
+    grid_dir = output_root / "lens_grid_check"
+    grid_dir.mkdir(parents=True, exist_ok=True)
+    width, height = 512, 320
+    image = Image.new("RGB", (width, height), (210, 230, 244))
+    draw = ImageDraw.Draw(image)
+    for x in range(0, width + 1, 40):
+        draw.line((x, 0, x, height), fill=(30, 50, 65), width=3)
+    for y in range(0, height + 1, 40):
+        draw.line((0, y, width, y), fill=(30, 50, 65), width=3)
+    image.save(grid_dir / "grid_original.png")
+    barrel, _, _ = _apply_sample(image, "lens_barrel", 1.0, device)
+    pincushion, _, _ = _apply_sample(image, "lens_pincushion", 1.0, device)
+    barrel.save(grid_dir / "grid_barrel.png")
+    pincushion.save(grid_dir / "grid_pincushion.png")
+    save_sheet(
+        grid_dir / "grid_lens_check.png",
+        [("undistorted", image), ("barrel", barrel), ("pincushion", pincushion)],
+        cell_width=360,
+    )
 
 
 def generate_samples(root: Path, output_root: Path, faces: list[str], explicit_image: str | None, save_level_images: bool) -> dict:
@@ -271,6 +313,7 @@ def generate_samples(root: Path, output_root: Path, faces: list[str], explicit_i
         save_sheet(image_dir / "all_perturbations_overview.png", overview_entries, cell_width=220)
 
     _write_notes(output_root, metadata)
+    _write_lens_grid_check(output_root, device)
     (output_root / "manifest.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     return metadata
 

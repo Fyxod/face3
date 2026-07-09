@@ -26,7 +26,7 @@
     },
     "laplacian": {
       "title": "Laplacian-smoothed deformation",
-      "note": "Laplacian smoothing itself is a mesh/field regularizer, not a unique warp. Here it is implemented as a trainable low-resolution displacement field repeatedly diffused by a discrete Laplacian-like neighbor average."
+      "note": "Laplacian smoothing itself is a mesh/field regularizer, not a unique warp. Here it is implemented as sparse handle/control displacements on a low-resolution grid, repeatedly diffused by a discrete Laplacian-like neighbor average before interpolation."
     },
     "geodesic": {
       "title": "Geodesic-inspired deformation",

@@ -75,7 +75,7 @@ Pass it with:
 Notes on feasibility:
 
 - Polar, B-spline/Bezier-style FFD, lens barrel/pincushion, and Möbius are direct 2D image-plane coordinate warps.
-- Laplacian smoothing is a regularization/smoothing operator on meshes or displacement fields, not a single canonical image warp. FACE3 implements it as a trainable low-resolution field diffused with a discrete Laplacian-like neighbor average.
+- Laplacian smoothing is a regularization/smoothing operator on meshes or displacement fields, not a single canonical image warp. FACE3 implements it as sparse/trainable low-resolution handle displacements diffused on the control grid with a discrete Laplacian-like neighbor average before interpolation.
 - The referenced geodesic face deformation work is a 3D/2.5D facial-surface method. FACE3 only has RGB images, so it implements a 2D geodesic-inspired elliptical face metric surrogate.
 - Differential geometry of surfaces is a 3D/surface framework. FACE3 implements a practical 2D Monge-patch-style surrogate: a scalar height map whose image-plane gradient becomes a coordinate displacement.
 

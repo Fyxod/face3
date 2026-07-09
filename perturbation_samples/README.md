@@ -28,7 +28,7 @@ Implemented on normalized image coordinates as a small complex-plane linear-frac
 
 ### Laplacian-smoothed deformation
 
-Laplacian smoothing itself is a mesh/field regularizer, not a unique warp. Here it is implemented as a trainable low-resolution displacement field repeatedly diffused by a discrete Laplacian-like neighbor average.
+Laplacian smoothing itself is a mesh/field regularizer, not a unique warp. Here it is implemented as sparse handle/control displacements on a low-resolution grid, repeatedly diffused by a discrete Laplacian-like neighbor average before interpolation.
 
 ### Geodesic-inspired deformation
 
@@ -44,7 +44,7 @@ Differential geometry of surfaces is a 3D/surface theory, not directly a raster 
 - Lens barrel and pincushion use radial camera-distortion style coordinate factors.
 - The B-spline/Bezier-style implementation uses a free-form deformation control grid, the practical raster-image analogue of perturbing spline control parameters.
 - Möbius uses the complex linear-fractional form `(a z + b) / (c z + d)`, restricted near identity for stability.
-- Laplacian smoothing is treated as displacement-field diffusion because Laplacian methods are normally mesh/field editing tools.
+- Laplacian smoothing is treated as sparse-handle displacement diffusion because Laplacian methods are normally mesh/field editing tools, not a standalone image-plane warp.
 - Geodesic and differential-surface items require actual 3D/surface data for literal implementations, so FACE3 provides RGB image-plane surrogates.
 
 ## Generated inputs
@@ -78,7 +78,7 @@ Differential geometry of surfaces is a 3D/surface theory, not directly a raster 
     },
     "laplacian": {
       "title": "Laplacian-smoothed deformation",
-      "note": "Laplacian smoothing itself is a mesh/field regularizer, not a unique warp. Here it is implemented as a trainable low-resolution displacement field repeatedly diffused by a discrete Laplacian-like neighbor average."
+      "note": "Laplacian smoothing itself is a mesh/field regularizer, not a unique warp. Here it is implemented as sparse handle/control displacements on a low-resolution grid, repeatedly diffused by a discrete Laplacian-like neighbor average before interpolation."
     },
     "geodesic": {
       "title": "Geodesic-inspired deformation",

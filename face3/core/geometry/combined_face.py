@@ -546,19 +546,22 @@ class CombinedFacePerturbation(torch.nn.Module):
 
         Laplacian smoothing is a mesh/field regularization operation rather
         than a unique image warp. Here it is implemented as a trainable coarse
-        displacement field repeatedly diffused with a discrete Laplacian-like
-        neighbor average.
+        handle/control displacement field repeatedly diffused on the coarse
+        grid with a discrete Laplacian-like neighbor average, then
+        interpolated to the image. This keeps it distinct from the B-spline
+        component, which directly interpolates its control grid.
         """
 
         if not self.config.laplacian_enabled:
             return self._zero_field()
         field = self.laplacian_raw.clamp(-self.laplacian_limit_px, self.laplacian_limit_px) * self.laplacian_mask
-        field = _upsample_control_field(field, self.height, self.width)
         alpha = float(self.config.laplacian_smoothing_alpha)
         alpha = max(0.0, min(alpha, 1.0))
         for _ in range(max(0, int(self.config.laplacian_smoothing_steps))):
             neighbor = F.avg_pool2d(field, kernel_size=3, stride=1, padding=1)
             field = (1.0 - alpha) * field + alpha * neighbor
+            field = field * self.laplacian_mask
+        field = _upsample_control_field(field, self.height, self.width)
         return _cap_field(field, self.laplacian_limit_px)
 
     def _geodesic_field(self) -> torch.Tensor:
