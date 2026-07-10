@@ -294,8 +294,8 @@ cd /home/interns/Desktop/face3
 $HOME/.local/bin/micromamba run \
   -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000 \
   python -m face3.scripts.summarize_runs \
-  --results-root outputs/edited_output_identity_1 \
-  --output-root outputs/reports/edited_output_identity_1
+  --results-root outputs/edited_output_identity_6 \
+  --output-root outputs/reports/edited_output_identity_6
 ```
 
 ## 7. Push results
@@ -324,4 +324,4 @@ outputs/**/*.pth
 
 
 
-$HOME/.local/bin/micromamba run   -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000   python -m face3.scripts.run_matrix   --mat-root /home/interns/Desktop/mat   --arcface-checkpoint /home/interns/Desktop/face3/models/arcface/iresnet100.pth   --iters 200   --edit-steps 20   --output-root outputs/edited_output_identity_5   --geometry-config configs/geometry_default.json   --init small_random   --skip-deepface   2>&1 | tee logs/face3_edited_output_identity_5.log
+$HOME/.local/bin/micromamba run   -p /home/interns/Desktop/mat/.micromamba/envs/mat-a6000   python -m face3.scripts.run_matrix   --mat-root /home/interns/Desktop/mat   --arcface-checkpoint /home/interns/Desktop/face3/models/arcface/iresnet100.pth   --iters 100   --edit-steps 20   --output-root outputs/edited_output_identity_7   --geometry-config configs/geometry_default.json   --init small_random   --skip-deepface   2>&1 | tee logs/face3_edited_output_identity_7.log
