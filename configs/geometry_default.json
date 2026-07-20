@@ -17,18 +17,18 @@
   },
   "components": {
     "tps": {
-      "enabled": false,
-      "norm_limit": 0.008,
+      "enabled": true,
+      "norm_limit": 0.006,
       "px_limit": null
     },
     "delaunay": {
-      "enabled": false,
-      "norm_limit": 0.015,
+      "enabled": true,
+      "norm_limit": 0.01,
       "px_limit": null
     },
     "rolling": {
-      "enabled": false,
-      "norm_limit": 0.01,
+      "enabled": true,
+      "norm_limit": 0.005,
       "px_limit": null
     },
     "dct": {
@@ -44,7 +44,7 @@
       "phase_limit_rad": 3.141592653589793
     },
     "polar": {
-      "enabled": false,
+      "enabled": true,
       "radial_norm_limit": 0.02,
       "radial_px_limit": null,
       "twist_limit_rad": 0.05
@@ -52,36 +52,36 @@
     "bspline": {
       "enabled": false,
       "size": 6,
-      "norm_limit": 0.03,
+      "norm_limit": 0.02,
       "px_limit": null
     },
     "lens_barrel": {
-      "enabled": false,
-      "k_limit": 0.03
+      "enabled": true,
+      "k_limit": 0.01
     },
     "lens_pincushion": {
-      "enabled": false,
-      "k_limit": 0.04
+      "enabled": true,
+      "k_limit": 0.02
     },
     "mobius": {
       "enabled": false,
-      "limit": 0.02
+      "limit": 0.01
     },
     "laplacian": {
-      "enabled": false,
+      "enabled": true,
       "size": 10,
-      "norm_limit": 0.02,
+      "norm_limit": 0.01,
       "px_limit": null,
       "smoothing_steps": 8,
       "smoothing_alpha": 0.35
     },
     "geodesic": {
-      "enabled": true,
-      "norm_limit": 0.003,
+      "enabled": false,
+      "norm_limit": 0.001,
       "px_limit": null
     },
     "differential_surface": {
-      "enabled": false,
+      "enabled": true,
       "size": 7,
       "height_limit": 0.12,
       "px_scale": 12.0
